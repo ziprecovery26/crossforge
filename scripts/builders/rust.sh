@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 # Generic Rust builder — cross compilation through cargo-zigbuild + zig.
+#
 # Recipe fields:
-#   rust.bins     : array of [[bin]] names (defaults to package name)
+#   rust.bins     : array of [[bin]] names. Khaali chhodo to auto-detect
+#                   (saare executables jo build ke baad target/<triple>/release me aaye).
 #   rust.features : comma separated features
-set -euo pipefail
+#   rust.no-default-features : "true" to pass --no-default-features
+#
+# Behaviour: ek target fail hone par baaki targets rukte nahi. Job sirf tab fail hoti hai
+# jab *koi bhi* target build na ho. Failed targets ka summary print hota hai.
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -27,53 +33,118 @@ cf::need jq
 
 CF_PROJECT="$(jq -r '.id' "$RECIPE")"
 export CF_PROJECT
-BINS="$(jq -r '(.rust.bins // [.custom.binaryName // .id]) | join(" ")' "$RECIPE")"
+declare -a BINS=()
+while IFS= read -r line; do [ -n "$line" ] && BINS+=("$line"); done < <(jq -r '(.rust.bins // [])[]' "$RECIPE")
 FEATURES="$(jq -r '.rust.features // empty' "$RECIPE")"
+NO_DEFAULT="$(jq -r '.rust.no-default-features // false' "$RECIPE")"
 
 PKG_DIR="$UPSTREAM/$(jq -r '.upstream.subdir // "."' "$RECIPE")"
-cd "$PKG_DIR"
+cd "$PKG_DIR" || cf::die "upstream subdir not found: $PKG_DIR"
 
 # Prefer cargo-zigbuild (no macOS machine needed for darwin targets). Fall back
 # to plain cargo when zig isn't available.
 BUILDER="cargo"
 if command -v cargo-zigbuild >/dev/null 2>&1; then
   BUILDER="cargo zigbuild"
-  cf::log "using cargo-zigbuild"
+  cf::log "using cargo-zigbuild ($(cargo zigbuild --version 2>/dev/null | head -1))"
 else
-  cf::warn "cargo-zigbuild not found — falling back to cargo (host-only linking; darwin/msvc targets may fail)"
+  cf::warn "cargo-zigbuild not found — falling back to cargo (host-only linking; darwin/windows targets may fail)"
 fi
+
+if [ "${#BINS[@]}" -gt 0 ]; then
+  cf::log "binary names from recipe: ${BINS[*]}"
+else
+  cf::log "no rust.bins in recipe — saare binaries auto-detect honge"
+fi
+
+FAILED=()
+BUILT=()
 
 for target in ${TARGETS//,/ }; do
   triple="$(cf::rust_triple "$target")"
   out_dir="$OUT/${CF_PROJECT}-${target}"
-  mkdir -p "$out_dir/bin"
+  rm -rf "$out_dir"; mkdir -p "$out_dir/bin"
 
   cf::group "building $CF_PROJECT-$target ($triple)"
 
   rustup target add "$triple" >/dev/null 2>&1 || cf::warn "rustup target add $triple failed (may already be installed)"
 
-  extra=""
-  [ -n "$FEATURES" ] && extra="--features $FEATURES"
+  # Android needs the NDK-provided compiler wrappers for C dependencies.
+  if [ "$triple" = "aarch64-linux-android" ] && [ -n "${ANDROID_NDK_HOME:-}" ]; then
+    NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+    export CC_aarch64_linux_android="$NDK_BIN/aarch64-linux-android24-clang"
+    export CXX_aarch64_linux_android="$NDK_BIN/aarch64-linux-android24-clang++"
+    export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
+    export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_BIN/aarch64-linux-android24-clang"
+    cf::log "android NDK env set (API 24)"
+  fi
+
+  extra=()
+  [ -n "$FEATURES" ] && extra+=(--features "$FEATURES")
+  [ "$NO_DEFAULT" = "true" ] && extra+=(--no-default-features)
+  if [ "${#BINS[@]}" -eq 0 ]; then extra+=(--bins); fi
 
   # shellcheck disable=SC2086
-  $BUILDER --release --target "$triple" $extra || cf::die "rust build failed for $triple"
+  if ! $BUILDER --release --target "$triple" "${extra[@]}"; then
+    cf::err "rust build failed for $triple"
+    cf::endgroup
+    FAILED+=("$target")
+    rmdir "$out_dir/bin" "$out_dir" 2>/dev/null || true
+    continue
+  fi
 
-  found=0
-  for bin in $BINS; do
-    src="target/$triple/release/$bin"
-    [ -f "${src}.exe" ] && src="${src}.exe"
-    if [ -f "$src" ]; then
-      cp "$src" "$out_dir/bin/"
-      found=1
-    else
-      cf::warn "expected binary not found: $src"
-    fi
-  done
-  [ "$found" = "1" ] || cf::die "no binaries produced for $triple"
+  release_dir="target/$triple/release"
+  copied=0
+
+  if [ "${#BINS[@]}" -gt 0 ]; then
+    for bin in "${BINS[@]}"; do
+      src="$release_dir/$bin"
+      [ -f "${src}.exe" ] && src="${src}.exe"
+      if [ -f "$src" ]; then
+        cp "$src" "$out_dir/bin/"
+        copied=$((copied + 1))
+      else
+        cf::warn "expected binary not found: $src"
+      fi
+    done
+  fi
+
+  # Auto-detect: executables in the release dir (skip build metadata/artifacts)
+  if [ "$copied" -eq 0 ]; then
+    while IFS= read -r f; do
+      b="$(basename "$f")"
+      case "$b" in
+        *.d|*.rlib|*.rmeta|*.so|*.dylib|*.dll|*.a|*.dSYM|*.pdb|*.exp|*.lib|*.o) continue ;;
+      esac
+      cp "$f" "$out_dir/bin/" && {
+        cf::log "auto-detected binary: $b"
+        copied=$((copied + 1))
+      }
+    done < <(find "$release_dir" -maxdepth 1 -type f -perm -u+x 2>/dev/null | sort)
+  fi
+
+  if [ "$copied" -eq 0 ]; then
+    cf::err "no binaries produced for $triple"
+    cf::endgroup
+    FAILED+=("$target")
+    rm -rf "$out_dir"
+    continue
+  fi
 
   cf::add_notice "$out_dir/bin" "$RECIPE"
   cf::archive "$target" "$out_dir/bin" "$OUT"
+  BUILT+=("$target")
   cf::endgroup
 done
+
+# ---- summary ------------------------------------------------------------------
+cf::log "built (${#BUILT[@]}): ${BUILT[*]:-none}"
+if [ "${#FAILED[@]}" -gt 0 ]; then
+  cf::warn "failed (${#FAILED[@]}): ${FAILED[*]}"
+fi
+
+if [ "${#BUILT[@]}" -eq 0 ]; then
+  cf::die "har target fail hua ($CF_PROJECT $VERSION) — recipe/toolchain check karo"
+fi
 
 cf::log "rust build complete for $CF_PROJECT $VERSION"
