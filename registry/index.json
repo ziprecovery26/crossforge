@@ -27,6 +27,21 @@
       "nightly": true,
       "enabled": true,
       "flagship": true
+    },
+    {
+      "id": "ripgrep",
+      "name": "ripgrep",
+      "repo": "BurntSushi/ripgrep",
+      "license": "Unlicense",
+      "buildSystem": "custom",
+      "recipe": "./ripgrep.json",
+      "targets": [
+        "android-arm64",
+        "linux-arm64",
+        "linux-x64"
+      ],
+      "nightly": false,
+      "enabled": true
     }
   ],
   "allowlist": {
