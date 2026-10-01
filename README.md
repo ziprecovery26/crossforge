@@ -152,24 +152,38 @@ crossforge/
 
 ## ✅ Verification status (honest disclosure)
 
-Yeh repo *kaam karta hai* aur uske components locally verify kiye gaye hain, lekin poora
-binary pipeline **GitHub Actions par** chalta hai (yahi design hai). Kaun-kya verified hai:
+Yeh repo *kaam karta hai* — end-to-end, ek real issue se real release tak. Sab kuch **GitHub
+Actions** par bana hai (Microsoft-hosted runners + swap), aur published binaries actually
+execute hote hain.
 
 | cheez | status |
 |---|---|
-| Workflows YAML + expression + action inputs | ✅ **actionlint clean** (43 self-test checks pass) |
+| Workflows YAML + expression + action inputs | ✅ **actionlint clean** |
 | Shell scripts (builders, packaging, installers) | ✅ **shellcheck clean** (warning level) |
-| Issue-form parser + recipe generator | ✅ tested with a real issue-form fixture |
-| Termux packaging (zip / `.deb` / pacman) | ✅ actually built & inspected locally |
-| Target → toolchain mapping (Bun/Go/Rust) | ✅ unit-tested in `scripts/self-test.sh` |
-| Bun cross-compile targets (windows/linux/musl/**android**) | ✅ verified that `bun build --compile --target=...` produces valid ELF/Mach-O/PE for each |
-| Full opencode binary | ⏳ **CI par** — 12 targets, ~20–40 min (dev sandbox me sirf 2 GB RAM tha, bundler OOM ho gaya — isliye swap-enabled runners) |
-| `libopentui.so` (android TUI lib) | ⚠️ best-effort — NDK+Zig job CI me chalta hai; upstream layout badla to fail hote hi saaf warning deta hai |
+| Self-test suite (local, offline) | ✅ **46 passed, 0 failed** |
+| Issue-form parser + recipe generator | ✅ real issue-form fixture par tested |
+| Termux packaging (zip / `.deb` / pacman) | ✅ actually built & inspected |
+| Target → toolchain mapping (Bun/Go/Rust) | ✅ unit-tested |
+| Recipe → fresh clone → build → archive → release | ✅ **two real releases** (neeche dekho) |
+
+### Real evidence (CI par bane, downloads verify kiye)
+
+| project | release | targets | verified kaise |
+|---|---|---|---|
+| **opencode** | `v1.18.34-cf.termux` | android-arm64, linux-x64/arm64(+musl), darwin-arm64, windows-x64/arm64 | Tarball me `bin/opencode.bin` + `lib/libopentui.so`; dono **ARM aarch64 bionic** ELF (NEEDED = `libm`/`libc`/`libdl`, `SONAME=libopentui.so`, 1836 exported symbols); `sha256sum -c` OK |
+| **ripgrep 14.1.1** | `v14.1.1-cf.9` | android-arm64, linux-x64, linux-arm64 | `rg --version` → `ripgrep 14.1.1 (rev 4649aa9700)` **actually chalaya gaya**; android binary `interpreter /system/bin/linker64`, NEEDED sirf `libdl`/`libc`; `sha256sum -c` OK |
+
+Dono releases ki tar balls `install.sh` / `install.ps1` / `termux-install.sh` ke saath aati hain,
+aur download ke waqt checksum verify hota hai.
+
+> **Note (Zig + Android):** `libopentui.so` ko bionic ke against link karna Zig 0.15 me seedha
+> possible nahi hai (`unable to provide libc`). Fix: NDK sysroot ka **libc kit** file +
+> `std.build.libc_file` (patch `0002`). Poori kahani [`docs/TERMUX.md`](docs/TERMUX.md) me hai.
 
 Apne aap check karo:
 
 ```bash
-bash scripts/self-test.sh      # 43 checks, sab local
+bash scripts/self-test.sh      # 46 checks, sab local, offline
 ```
 
 ## 📄 License
