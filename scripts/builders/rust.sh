@@ -134,6 +134,26 @@ for target in ${TARGETS//,/ }; do
     continue
   fi
 
+  # Debug info strip karo (Termux/mobile-friendly size). llvm-strip NDK se sab
+  # architectures handle karta hai; na mile to host `strip`; fail = non-fatal.
+  STRIP_BIN=""
+  for cand in "${ANDROID_NDK_HOME:-}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" \
+              /opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip \
+              "$(command -v llvm-strip 2>/dev/null || true)" \
+              "$(command -v strip 2>/dev/null || true)"; do
+    [ -n "$cand" ] && [ -x "$cand" ] && { STRIP_BIN="$cand"; break; }
+  done
+  if [ -n "$STRIP_BIN" ]; then
+    while IFS= read -r f; do
+      case "$(basename "$f")" in *.d|*.rlib|*.rmeta|*.pdb) continue ;; esac
+      b4="$(stat -c %s "$f" 2>/dev/null || echo 0)"
+      "$STRIP_BIN" --strip-unneeded "$f" 2>/dev/null || true
+      cf::log "stripped $(basename "$f"): $b4 -> $(stat -c %s "$f" 2>/dev/null || echo '?') bytes"
+    done < <(find "$out_dir/bin" -type f)
+  else
+    cf::warn "strip tool nahi mila — unstripped binaries"
+  fi
+
   cf::add_notice "$out_dir/bin" "$RECIPE"
   cf::archive "$target" "$out_dir/bin" "$OUT"
   BUILT+=("$target")

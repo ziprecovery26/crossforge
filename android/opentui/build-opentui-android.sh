@@ -193,6 +193,30 @@ SO="$(find "$ZIG_DIR/zig-out" -name "libopentui.so*" -type f 2>/dev/null | head 
 [ -n "$SO" ] || cf::die "libopentui.so not found after build"
 
 cp "$SO" "$OUT/libopentui.so"
+
+# Debug info hata do — Termux users mobile data par download karte hain,
+# 13 MB -> ~5 MB se farak padta hai. Strip optional hai (fail ho to chalta hai).
+LLVM_STRIP=""
+for base in "${ANDROID_NDK_HOME:-}" "${NDK_HOME:-}" /opt/android-ndk "$HOME/android-ndk"; do
+  [ -n "$base" ] || continue
+  if [ -x "$base/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" ]; then
+    LLVM_STRIP="$base/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+    break
+  fi
+done
+if [ -z "$LLVM_STRIP" ] && command -v llvm-strip >/dev/null 2>&1; then
+  LLVM_STRIP="$(command -v llvm-strip)"
+fi
+if [ -n "$LLVM_STRIP" ]; then
+  BEFORE="$(stat -c %s "$OUT/libopentui.so")"
+  if "$LLVM_STRIP" --strip-unneeded "$OUT/libopentui.so" 2>/dev/null; then
+    cf::log "stripped: $BEFORE -> $(stat -c %s "$OUT/libopentui.so") bytes"
+  else
+    cf::warn "llvm-strip failed — unstripped .so ship kar rahe hain"
+  fi
+else
+  cf::warn "llvm-strip nahi mila — unstripped .so ship kar rahe hain"
+fi
 cf::log "artifact: $(file "$OUT/libopentui.so")"
 file "$OUT/libopentui.so" | grep -q "ARM aarch64" || cf::die "produced .so is not aarch64 — refusing to ship"
 
