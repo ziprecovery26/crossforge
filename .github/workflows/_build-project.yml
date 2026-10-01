@@ -89,7 +89,7 @@ jobs:
       project: ${{ steps.recipe.outputs.project }}
       repo: ${{ steps.recipe.outputs.repo }}
       ref: ${{ steps.ref.outputs.ref }}
-      version: ${{ steps.recipe.outputs.version }}
+      version: ${{ steps.version.outputs.version }}
       release_tag: ${{ steps.tag.outputs.tag }}
       targets: ${{ steps.targets.outputs.targets }}
       shards: ${{ steps.targets.outputs.shards }}
