@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/OWNER/crossforge/registry/schema/recipe.schema.json",
+  "title": "CrossForge build recipe",
+  "type": "object",
+  "required": ["id", "name", "upstream", "license", "buildSystem", "targets"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "upstream": {
+      "type": "object",
+      "required": ["repo", "ref"],
+      "properties": {
+        "repo": { "type": "string", "description": "owner/name" },
+        "url": { "type": "string" },
+        "ref": { "type": "string", "description": "tag, branch or full SHA" },
+        "refStrategy": {
+          "type": "string",
+          "enum": ["pinned", "latest-tag", "latest-tag-or-branch", "branch-head", "nightly"],
+          "default": "pinned"
+        },
+        "subdir": { "type": "string" },
+        "monorepo": {
+          "type": "object",
+          "properties": {
+            "packageDir": { "type": "string" },
+            "buildDriver": { "type": "string", "description": "path inside CrossForge repo to the driver file" },
+            "driverTargetDir": { "type": "string", "description": "path inside the upstream checkout where the driver must be copied" }
+          }
+        }
+      }
+    },
+    "license": {
+      "type": "object",
+      "required": ["spdx", "redistributable"],
+      "properties": {
+        "spdx": { "type": "string" },
+        "redistributable": { "type": "boolean" },
+        "notes": { "type": "string" }
+      }
+    },
+    "buildSystem": { "type": "string", "enum": ["bun", "node", "go", "rust", "cargo-zigbuild", "make", "custom"] },
+    "bun": {
+      "type": "object",
+      "properties": { "version": { "type": "string" }, "installFlags": { "type": "string" } }
+    },
+    "go": {
+      "type": "object",
+      "properties": { "package": { "type": "string" }, "ldflags": { "type": "string" }, "cgo": { "type": "boolean" } }
+    },
+    "rust": {
+      "type": "object",
+      "properties": { "bins": { "type": "array", "items": { "type": "string" } }, "features": { "type": "string" } }
+    },
+    "custom": {
+      "type": "object",
+      "properties": {
+        "clone": { "type": "string" },
+        "build": { "type": "string" },
+        "artifacts": { "type": "string" }
+      }
+    },
+    "targets": { "type": "array", "items": { "type": "string" } },
+    "defaultTargets": { "type": "array", "items": { "type": "string" } },
+    "nativeSmokeTest": {
+      "type": "object",
+      "properties": { "target": { "type": "string" }, "command": { "type": "string" } }
+    },
+    "android": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "runtimeTarget": { "type": "string" },
+        "requiresNativeLibs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "source": { "type": "string" },
+              "required": { "type": "boolean" },
+              "reason": { "type": "string" }
+            }
+          }
+        },
+        "packaging": { "type": "array", "items": { "type": "string", "enum": ["zip", "deb", "pacman"] } },
+        "minAndroid": { "type": "integer" },
+        "arch": { "type": "string", "enum": ["aarch64", "armv7", "x86_64"] }
+      }
+    },
+    "nightly": { "type": "boolean", "default": true },
+    "enabled": { "type": "boolean", "default": true },
+    "notes": { "type": "array", "items": { "type": "string" } }
+  }
+}

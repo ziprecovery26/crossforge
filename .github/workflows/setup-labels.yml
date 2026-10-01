@@ -1,0 +1,76 @@
+# ==============================================================================
+# CrossForge · one-time setup
+# ------------------------------------------------------------------------------
+# Repo banane ke baad YE workflow ek baar manually chalao (Actions → Setup labels
+# → Run workflow). Yeh:
+#   1. zaroori labels bana deta hai (cf:approved, cf:license-ok, ...)
+#   2. optional repo variables set kar deta hai (OPENTUI_REF, OPENTUI_ZIG_VERSION)
+#   3. ek "hello" build ke liye tayaar hai
+# ==============================================================================
+name: setup labels
+
+on:
+  workflow_dispatch:
+    inputs:
+      set_variables:
+        description: "Repo variables bhi set karo (OPENTUI_REF / OPENTUI_ZIG_VERSION)"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 🏷️ Create labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          create() {
+            gh label create "$1" --color "$2" --description "$3" --force >/dev/null 2>&1 \
+              && echo "✅ $1" || echo "⚠️ $1 (already exists?)"
+          }
+          create "build-request"       "1D76DB" "User ne naya project build karne ko kaha hai"
+          create "cf:triage"           "FBCA04" "Bot triage pending"
+          create "cf:license-ok"       "0E8A16" "License allowlist me pass ho gaya"
+          create "cf:license-blocked"  "B60205" "License allow nahi karta"
+          create "cf:needs-review"     "D93F0B" "Manual license review chahiye"
+          create "cf:needs-info"       "C2E0C6" "Request me info missing hai"
+          create "cf:approved"         "5319E7" "Maintainer approved → build chalu hoga"
+          create "cf:built"            "0E8A16" "Binary publish ho gaya"
+          create "cf:failed"           "B60205" "Build fail hua"
+          create "bug"                 "D73A4A" "Kuch toot gaya"
+          echo "labels ready"
+
+      - name: ⚙️ Set repository variables
+        if: ${{ inputs.set_variables }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          OPENTUI_REF="$(jq -r '.android.opentui.ref // "v0.4.5"' registry/opencode.json 2>/dev/null || echo v0.4.5)"
+          OPENTUI_ZIG="$(jq -r '.android.opentui.zigVersion // "0.15.2"' registry/opencode.json 2>/dev/null || echo 0.15.2)"
+          gh variable set OPENTUI_REF --body "$OPENTUI_REF" || true
+          gh variable set OPENTUI_ZIG_VERSION --body "$OPENTUI_ZIG" || true
+          echo "variables set: OPENTUI_REF=$OPENTUI_REF OPENTUI_ZIG_VERSION=$OPENTUI_ZIG"
+
+      - name: ✅ Next steps
+        run: |
+          {
+            echo "## Setup complete"
+            echo ""
+            echo "1. **Actions** tab → *opencode · release* → **Run workflow**"
+            echo "2. Ya koi bhi build request issue kholo → maintainer \`cf:approved\` label lagaye"
+            echo "3. Nightly builds automatically roz 03:00 UTC par chalenge"
+            echo ""
+            echo "Pehla build ~20-40 min leta hai (12 targets, swap-enabled runners)."
+          } >> "$GITHUB_STEP_SUMMARY"

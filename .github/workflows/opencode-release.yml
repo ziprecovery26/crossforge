@@ -1,0 +1,81 @@
+# ==============================================================================
+# opencode · cross-platform release
+# ------------------------------------------------------------------------------
+# Pehla flagship project. Manual dispatch se chalta hai; nightly-rebuild.yml
+# isko roz raat automatically trigger karta hai (fresh upstream par).
+#
+# Targets: Windows (x64/arm64) · Linux (glibc + musl, x64/arm64) · macOS · Android/Termux
+# ==============================================================================
+name: opencode · release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Upstream ref (tag / branch / SHA) — khaali = recipe/latest tag"
+        required: false
+        type: string
+        default: ""
+      targets:
+        description: "Comma separated targets (khaali = recipe ke defaultTargets)"
+        required: false
+        type: string
+        default: ""
+      release_tag:
+        description: "Release tag (khaali = v<version>-cf.<run_number>)"
+        required: false
+        type: string
+        default: ""
+      publish:
+        description: "GitHub Release publish karo?"
+        required: false
+        type: boolean
+        default: true
+      shards:
+        description: "Parallel build jobs (2-4)"
+        required: false
+        type: string
+        default: "2"
+
+concurrency:
+  group: opencode-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+  id-token: write
+  attestations: write
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/_pipeline.yml
+    with:
+      project: opencode
+      ref: ${{ inputs.ref }}
+      targets: ${{ inputs.targets }}
+      release_tag: ${{ inputs.release_tag }}
+      release_name: ${{ inputs.release_tag || '' }}
+      publish: ${{ inputs.publish }}
+      prerelease: false
+      shards: ${{ inputs.shards }}
+
+  summary:
+    needs: pipeline
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📋 Result
+        run: |
+          {
+            echo "# 🔨 opencode build"
+            echo ""
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| version | \`${{ needs.pipeline.outputs.version }}\` |"
+            echo "| release | ${{ needs.pipeline.outputs.release_url || '(publish disabled)' }} |"
+            echo "| status | \`${{ needs.pipeline.result }}\` |"
+            echo ""
+            echo "Artifacts: [run #${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          } >> "$GITHUB_STEP_SUMMARY"

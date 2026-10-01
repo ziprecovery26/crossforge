@@ -1,0 +1,72 @@
+name: "CrossForge · Setup swap"
+description: >-
+  Creates and enables swap space on Linux runners so heavy cross-compile jobs
+  (Bun bundling, Cargo, WebKit-scale native builds) don't get OOM-killed.
+  GitHub-hosted runners ship with 16 GB RAM and NO swap — this action is the
+  difference between a green build and a silent SIGKILL.
+
+inputs:
+  size:
+    description: "Swap file size (e.g. 4G, 8G, 16G)"
+    required: false
+    default: "8G"
+  path:
+    description: "Where to create the swapfile. /mnt is the large ephemeral NVMe on GitHub runners."
+    required: false
+    default: "/mnt/cf-swapfile"
+  swappiness:
+    description: "vm.swappiness value while the build runs"
+    required: false
+    default: "60"
+
+runs:
+  using: composite
+  steps:
+    - name: Create swap
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ "${{ runner.os }}" != "Linux" ]; then
+          echo "::notice::Not a Linux runner — OS-managed paging already exists, skipping swap setup."
+          exit 0
+        fi
+
+        SWAP_FILE="${{ inputs.path }}"
+        SIZE="${{ inputs.size }}"
+
+        if sudo swapon --show | grep -q .; then
+          echo "::notice::Swap already active:"
+          sudo swapon --show
+          exit 0
+        fi
+
+        echo "== Before =="; free -h; df -h / /mnt 2>/dev/null || true
+
+        # Prefer the big ephemeral disk so we don't fill the root filesystem.
+        TARGET_DIR="$(dirname "$SWAP_FILE")"
+        if [ ! -d "$TARGET_DIR" ] || ! sudo test -w "$TARGET_DIR"; then
+          echo "::warning::$TARGET_DIR not writable, falling back to /swapfile"
+          SWAP_FILE="/swapfile"
+        fi
+
+        # How much can we actually allocate? Leave 8 GB of headroom.
+        AVAIL_MB=$(df -Pm "$(dirname "$SWAP_FILE")" | awk 'NR==2{print $4}')
+        WANT_MB=$(numfmt --from=iec "${SIZE%[Bb]}" 2>/dev/null | awk '{printf "%d", $1/1024/1024}' || echo 8192)
+        [ -z "$WANT_MB" ] && WANT_MB=8192
+        if [ "$AVAIL_MB" -lt $((WANT_MB + 8192)) ]; then
+          WANT_MB=$(( AVAIL_MB > 8192 ? AVAIL_MB - 8192 : 1024 ))
+          echo "::warning::Shrinking swap to ${WANT_MB}M to avoid filling the disk"
+        fi
+
+        echo "Creating ${WANT_MB}M swapfile at $SWAP_FILE"
+        sudo fallocate -l "${WANT_MB}M" "$SWAP_FILE" \
+          || sudo dd if=/dev/zero of="$SWAP_FILE" bs=1M count="$WANT_MB" status=progress
+        sudo chmod 600 "$SWAP_FILE"
+        sudo mkswap "$SWAP_FILE" >/dev/null
+        sudo swapon "$SWAP_FILE"
+
+        sudo sysctl -w vm.swappiness="${{ inputs.swappiness }}" >/dev/null || true
+        sudo sysctl -w vm.vfs_cache_pressure=50 >/dev/null || true
+
+        echo "== After =="; free -h; sudo swapon --show
+        echo "swap_file=$SWAP_FILE" >> "$GITHUB_ENV"

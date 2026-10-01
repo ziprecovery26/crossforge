@@ -1,0 +1,73 @@
+{
+  "$schema": "./schema/recipe.schema.json",
+  "id": "opencode",
+  "name": "opencode",
+  "description": "The open source AI coding agent (TUI + headless server). CrossForge's flagship build.",
+  "upstream": {
+    "repo": "anomalyco/opencode",
+    "url": "https://github.com/anomalyco/opencode",
+    "ref": "dev",
+    "refStrategy": "latest-tag-or-branch",
+    "monorepo": {
+      "packageDir": "packages/opencode",
+      "buildDriver": "drivers/opencode/build-matrix.ts",
+      "driverTargetDir": "packages/opencode/script/build-matrix.ts"
+    }
+  },
+  "license": {
+    "spdx": "MIT",
+    "redistributable": true,
+    "notes": "Upstream LICENSE is MIT (Copyright (c) 2025 opencode). Redistribution of compiled binaries is permitted with license notice. CrossForge ships upstream LICENSE + a NOTICE file inside every archive."
+  },
+  "buildSystem": "bun",
+  "bun": { "version": "1.4.2" },
+  "targets": [
+    "linux-x64",
+    "linux-x64-baseline",
+    "linux-arm64",
+    "linux-x64-musl",
+    "linux-x64-musl-baseline",
+    "linux-arm64-musl",
+    "darwin-x64",
+    "darwin-arm64",
+    "windows-x64",
+    "windows-x64-baseline",
+    "windows-arm64",
+    "android-arm64"
+  ],
+  "defaultTargets": [
+    "linux-x64",
+    "linux-arm64",
+    "linux-x64-musl",
+    "linux-arm64-musl",
+    "windows-x64",
+    "windows-arm64",
+    "darwin-arm64",
+    "android-arm64"
+  ],
+  "nativeSmokeTest": {
+    "target": "linux-x64",
+    "command": "./opencode --version"
+  },
+  "android": {
+    "enabled": true,
+    "runtimeTarget": "bun-linux-arm64-android",
+    "requiresNativeLibs": [
+      {
+        "name": "libopentui.so",
+        "source": "android/opentui/build-opentui-android.sh",
+        "required": true,
+        "reason": "TUI renderer; @opentui/core has no official android-arm64 npm package"
+      }
+    ],
+    "packaging": ["zip", "deb", "pacman"],
+    "minAndroid": 7,
+    "arch": "aarch64"
+  },
+  "nightly": true,
+  "enabled": true,
+  "notes": [
+    "Build matrix driver is based on upstream packages/opencode/script/build.ts (MIT) with added android-arm64 target and --targets selector.",
+    "Embedded web UI is skipped for the android target to keep the Termux artifact small and because the TUI is the primary interface there."
+  ]
+}

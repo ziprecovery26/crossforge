@@ -1,0 +1,143 @@
+# ==============================================================================
+# CrossForge · full pipeline (reusable)
+# ------------------------------------------------------------------------------
+# Yeh wrapper do cheezein jodta hai:
+#   1. Android ke liye native libs (libopentui.so) — NDK se build, best-effort
+#   2. Phir _build-project.yml ko call karta hai (swap + toolchain + compile + release)
+#
+# Callers: opencode-release.yml · nightly-rebuild.yml · build-request.yml
+# ==============================================================================
+name: _pipeline
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        required: true
+        type: string
+      ref:
+        required: false
+        type: string
+        default: ""
+      targets:
+        required: false
+        type: string
+        default: ""
+      release_tag:
+        required: false
+        type: string
+        default: ""
+      release_name:
+        required: false
+        type: string
+        default: ""
+      publish:
+        required: false
+        type: boolean
+        default: true
+      prerelease:
+        required: false
+        type: boolean
+        default: false
+      issue_number:
+        required: false
+        type: string
+        default: ""
+      shards:
+        required: false
+        type: string
+        default: "2"
+    outputs:
+      version:
+        value: ${{ jobs.build.outputs.version }}
+      release_url:
+        value: ${{ jobs.build.outputs.release_url }}
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+  attestations: write
+  id-token: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Android native libs — sirf tab jab android-arm64 target maanga gaya ho.
+  # Fail ho jaye to desktop builds rukne nahi chahiye (continue-on-error).
+  # ---------------------------------------------------------------------------
+  android-libs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    continue-on-error: true
+    if: ${{ inputs.targets == '' || contains(inputs.targets, 'android-arm64') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-swap
+        with:
+          size: 8G
+      - uses: ./.github/actions/setup-toolchain
+        with:
+          ndk: "true"
+          apt-packages: "git cmake ninja-build"
+
+      - name: 🧬 Build libopentui.so for android-arm64
+        id: opentui
+        env:
+          OPENTUI_REF: ${{ vars.OPENTUI_REF || 'v0.4.5' }}
+          ZIG_VERSION: ${{ vars.OPENTUI_ZIG_VERSION || '0.15.2' }}
+        run: |
+          set -euo pipefail
+          mkdir -p out-android
+          bash android/opentui/build-opentui-android.sh \
+            --work "$RUNNER_TEMP/opentui" \
+            --out  "$GITHUB_WORKSPACE/out-android" \
+            --ref  "$OPENTUI_REF" \
+            --zig  "$ZIG_VERSION" || {
+              echo "::warning::libopentui.so build failed — Termux binary will ship without the TUI lib"
+              echo "ok=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            }
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: 📤 Upload android libs
+        if: ${{ steps.opentui.outputs.ok == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cf-android-libs-${{ inputs.project }}
+          path: out-android/libopentui.so
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: 📝 Note
+        run: |
+          {
+            echo "### 📱 Android native libs"
+            if [ "${{ steps.opentui.outputs.ok }}" = "true" ]; then
+              echo "✅ \`libopentui.so\` (bionic aarch64) built successfully."
+            else
+              echo "⚠️ \`libopentui.so\` build FAILED — the Termux binary will be published without the TUI renderer."
+              echo "See [docs/TERMUX.md](https://github.com/${{ github.repository }}/blob/main/docs/TERMUX.md) for the fallback options."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Main build (always runs, even if the android libs job failed)
+  # ---------------------------------------------------------------------------
+  build:
+    needs: android-libs
+    if: ${{ always() && !cancelled() }}
+    uses: ./.github/workflows/_build-project.yml
+    with:
+      project: ${{ inputs.project }}
+      ref: ${{ inputs.ref }}
+      targets: ${{ inputs.targets }}
+      release_tag: ${{ inputs.release_tag }}
+      release_name: ${{ inputs.release_name }}
+      publish: ${{ inputs.publish }}
+      prerelease: ${{ inputs.prerelease }}
+      issue_number: ${{ inputs.issue_number }}
+      shards: ${{ inputs.shards }}
+      # The artifact only exists when the NDK build succeeded; the download step
+      # inside _build-project is continue-on-error so a missing lib never breaks
+      # the desktop builds.
+      android_libs_artifact: cf-android-libs-${{ inputs.project }}

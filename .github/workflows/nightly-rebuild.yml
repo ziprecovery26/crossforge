@@ -1,0 +1,189 @@
+# ==============================================================================
+# CrossForge · nightly rebuild
+# ------------------------------------------------------------------------------
+# Roz 03:00 UTC (= 08:30 IST) par chalta hai. Registered projects ke upstream
+# commits check karta hai; jinke paas naya code aaya hai unke fresh binaries
+# banata hai aur "nightly-YYYY.MM.DD" tag par (pre-release) publish karta hai.
+#
+# Sab builds GitHub ke runners par hote hain — 16 GB RAM + humara extra SWAP.
+# ==============================================================================
+name: nightly rebuild
+
+on:
+  schedule:
+    # 03:00 UTC daily
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      projects:
+        description: "Comma separated project ids (khaali = registry ke sab nightly projects)"
+        required: false
+        type: string
+        default: ""
+      only_changed:
+        description: "Sirf wahi projects jinme naya upstream commit aaya ho"
+        required: false
+        type: boolean
+        default: false
+      publish:
+        description: "Release publish karo?"
+        required: false
+        type: boolean
+        default: true
+      shards:
+        description: "Parallel build jobs per project"
+        required: false
+        type: string
+        default: "3"
+
+concurrency:
+  group: nightly-rebuild
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+  id-token: write
+  attestations: write
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # Plan: registry padho, upstream commits compare karo, matrix banao
+  # ----------------------------------------------------------------------------
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      tag: ${{ steps.tag.outputs.tag }}
+      count: ${{ steps.matrix.outputs.count }}
+      table: ${{ steps.matrix.outputs.table }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 🏷️ Nightly tag
+        id: tag
+        run: echo "tag=nightly-$(date -u +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+
+      - name: 🔍 Compare upstream commits
+        id: matrix
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_PROJECTS: ${{ inputs.projects }}
+          ONLY_CHANGED: ${{ inputs.only_changed }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2129  # repeated appends to $GITHUB_OUTPUT are idiomatic in Actions
+          mkdir -p .state
+          STATE=".state/last-built.json"
+          [ -f "$STATE" ] || echo '{}' > "$STATE"
+
+          WANTED="$INPUT_PROJECTS"
+          INCLUDE="[]"
+          TABLE=""
+
+          for row in $(jq -r '.projects[] | select(.enabled == true and .nightly == true) | @base64' registry/index.json); do
+            P="$(echo "$row" | base64 -d)"
+            ID="$(jq -r '.id' <<<"$P")"
+            REPO="$(jq -r '.repo' <<<"$P")"
+            RECIPE="registry/$ID.json"
+
+            if [ -n "$WANTED" ] && ! echo ",$WANTED," | grep -q ",$ID,"; then continue; fi
+
+            REF="$(jq -r '.upstream.ref' "$RECIPE")"
+            TARGETS="$(jq -r '(.defaultTargets // .targets) | join(",")' "$RECIPE")"
+
+            # resolve current upstream commit for the tracked ref
+            CUR="$(gh api "repos/$REPO/commits/$REF" --jq .sha 2>/dev/null || echo unknown)"
+            LAST="$(jq -r --arg id "$ID" '.[$id] // "none"' "$STATE")"
+            CHANGED="false"
+            [ "$CUR" != "$LAST" ] && CHANGED="true"
+
+            echo "$ID: upstream=$CUR last_built=$LAST changed=$CHANGED"
+
+            if [ "${ONLY_CHANGED:-false}" = "true" ] && [ "$CHANGED" = "false" ] && [ "$LAST" != "none" ]; then
+              TABLE="${TABLE}| $ID | \`${CUR:0:7}\` | unchanged | ⏭️ skipped |\n"
+              continue
+            fi
+
+            INCLUDE="$(jq -c --arg p "$ID" --arg t "$TARGETS" --arg c "$CUR" \
+              '. + [{project: $p, targets: $t, commit: $c}]' <<<"$INCLUDE")"
+            TABLE="${TABLE}| $ID | \`${CUR:0:7}\` | $([ "$CHANGED" = "true" ] && echo '🆕 new' || echo '↻ forced') | 🏗️ building |\n"
+          done
+
+          COUNT="$(jq 'length' <<<"$INCLUDE")"
+          {
+            echo "matrix=$(jq -c '{include: .}' <<<"$INCLUDE")"
+            echo "count=$COUNT"
+            echo "table<<EOF"
+            echo -e "$TABLE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## 🌙 Nightly plan — $COUNT project(s)"
+            echo ""
+            echo "| project | upstream | change | action |"
+            echo "|---|---|---|---|"
+            echo -e "$TABLE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📭 Nothing to build?
+        if: ${{ steps.matrix.outputs.count == '0' }}
+        run: echo "::notice::Koi project nahi mila jise rebuild karna hai (sab up-to-date hain)."
+
+  # ----------------------------------------------------------------------------
+  # Build every changed project (parallel matrix) — full pipeline with swap
+  # ----------------------------------------------------------------------------
+  build:
+    needs: plan
+    if: ${{ needs.plan.outputs.count != '0' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    uses: ./.github/workflows/_pipeline.yml
+    with:
+      project: ${{ matrix.project }}
+      targets: ${{ matrix.targets }}
+      release_tag: ${{ needs.plan.outputs.tag }}
+      release_name: "Nightly ${{ needs.plan.outputs.tag }}"
+      publish: ${{ inputs.publish || github.event_name == 'schedule' }}
+      prerelease: true
+      shards: ${{ inputs.shards || '3' }}
+
+  # ----------------------------------------------------------------------------
+  # Record what we built, so tomorrow's run can diff against it
+  # ----------------------------------------------------------------------------
+  record:
+    needs: [plan, build]
+    if: ${{ always() && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
+
+      - name: 💾 Save upstream commits
+        env:
+          MATRIX: ${{ needs.plan.outputs.matrix }}
+        run: |
+          set -euo pipefail
+          mkdir -p .state
+          [ -f .state/last-built.json ] || echo '{}' > .state/last-built.json
+          NEW="$(jq -r '.include[] | "\(.project) \(.commit)"' <<<"$MATRIX")"
+          TMP="$(mktemp)"
+          cp .state/last-built.json "$TMP"
+          while read -r id commit; do
+            [ -n "$id" ] || continue
+            jq --arg id "$id" --arg c "$commit" '.[$id] = $c' "$TMP" > .state/last-built.json.tmp
+            mv .state/last-built.json.tmp "$TMP"
+          done <<< "$NEW"
+          cp "$TMP" .state/last-built.json
+          cat .state/last-built.json
+
+          git config user.name "crossforge-bot"
+          git config user.email "crossforge-bot@users.noreply.github.com"
+          git add .state/last-built.json
+          git commit -m "chore(state): nightly build record $(date -u +%Y-%m-%d)" || exit 0
+          git push

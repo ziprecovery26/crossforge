@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentation
+    url: https://github.com/OWNER/crossforge/tree/main/docs
+    about: Request flow, build matrix, Termux setup — sab yahan hai.
+  - name: 💬 Discussions
+    url: https://github.com/OWNER/crossforge/discussions
+    about: Sawaal, ideas ya build help ke liye.
+  - name: 🔐 Security issue
+    url: https://github.com/OWNER/crossforge/security/advisories/new
+    about: Kisi published binary mein security problem mile to private report karo.

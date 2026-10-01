@@ -1,0 +1,547 @@
+# ==============================================================================
+# CrossForge · reusable build pipeline
+# ------------------------------------------------------------------------------
+# Ek hi jagah saara build logic: swap setup → toolchain → upstream clone →
+# cross-compile → smoke test → GitHub Release → issue comment.
+#
+# Called by: opencode-release.yml · nightly-rebuild.yml · build-request.yml
+# ==============================================================================
+name: _build-project
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: "registry/<project>.json ka id"
+        required: true
+        type: string
+      ref:
+        description: "Upstream ref override (tag / branch / SHA). Khaali = recipe se."
+        required: false
+        type: string
+        default: ""
+      targets:
+        description: "Comma separated CrossForge target ids. Khaali = recipe ke defaultTargets."
+        required: false
+        type: string
+        default: ""
+      release_tag:
+        description: "Release tag (e.g. v1.18.34-cf.1 ya nightly-2026.10.01). Khaali = auto."
+        required: false
+        type: string
+        default: ""
+      release_name:
+        description: "Release ka display name"
+        required: false
+        type: string
+        default: ""
+      publish:
+        description: "GitHub Release publish karna hai?"
+        required: false
+        type: boolean
+        default: true
+      prerelease:
+        description: "Release ko pre-release mark karo (nightly ke liye)"
+        required: false
+        type: boolean
+        default: false
+      issue_number:
+        description: "Result comment kis issue par jaye"
+        required: false
+        type: string
+        default: ""
+      shards:
+        description: "Kitne parallel jobs mein build todo (2-4 recommended)"
+        required: false
+        type: string
+        default: "2"
+      android_libs_artifact:
+        description: "libopentui.so wala artifact naam (android-arm64 ke liye)"
+        required: false
+        type: string
+        default: ""
+    outputs:
+      version:
+        description: "Resolved version"
+        value: ${{ jobs.resolve.outputs.version }}
+      release_tag:
+        value: ${{ jobs.resolve.outputs.release_tag }}
+      release_url:
+        value: ${{ jobs.release.outputs.release_url }}
+      targets:
+        value: ${{ jobs.resolve.outputs.targets }}
+
+# GITHUB_TOKEN ko release banane + issue comment karne ka haq chahiye
+permissions:
+  contents: write
+  issues: write
+  actions: read
+  attestations: write
+  id-token: write
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # 1. Resolve: recipe padho, ref/version/targets nikalo, shards banao
+  # ----------------------------------------------------------------------------
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      project: ${{ steps.recipe.outputs.project }}
+      repo: ${{ steps.recipe.outputs.repo }}
+      ref: ${{ steps.ref.outputs.ref }}
+      version: ${{ steps.recipe.outputs.version }}
+      release_tag: ${{ steps.tag.outputs.tag }}
+      targets: ${{ steps.targets.outputs.targets }}
+      shards: ${{ steps.targets.outputs.shards }}
+      need_ndk: ${{ steps.targets.outputs.need_ndk }}
+      bun_version: ${{ steps.recipe.outputs.bun_version }}
+      build_system: ${{ steps.recipe.outputs.build_system }}
+      android_enabled: ${{ steps.recipe.outputs.android_enabled }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read recipe
+        id: recipe
+        env:
+          PROJECT: ${{ inputs.project }}
+        run: |
+          set -euo pipefail
+          R="registry/$PROJECT.json"
+          [ -f "$R" ] || { echo "::error::recipe not found: $R"; exit 1; }
+          {
+            echo "project=$(jq -r '.id' "$R")"
+            echo "repo=$(jq -r '.upstream.repo' "$R")"
+            echo "build_system=$(jq -r '.buildSystem' "$R")"
+            echo "bun_version=$(jq -r '.bun.version // ""' "$R")"
+            echo "android_enabled=$(jq -r '.android.enabled // false' "$R")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve upstream ref
+        id: ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_REF: ${{ inputs.ref }}
+          REPO: ${{ steps.recipe.outputs.repo }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_REF" ]; then
+            REF="$INPUT_REF"
+          else
+            REF="$(jq -r '.upstream.ref' "registry/${{ inputs.project }}.json")"
+            STRATEGY="$(jq -r '.upstream.refStrategy // "pinned"' "registry/${{ inputs.project }}.json")"
+            if [ "$STRATEGY" = "latest-tag" ] || [ "$STRATEGY" = "latest-tag-or-branch" ]; then
+              LATEST="$(gh api "repos/$REPO/releases/latest" --jq .tag_name 2>/dev/null || true)"
+              if [ -z "$LATEST" ]; then
+                LATEST="$(gh api "repos/$REPO/tags" --jq '.[0].name' 2>/dev/null || true)"
+              fi
+              [ -n "$LATEST" ] && REF="$LATEST"
+            fi
+          fi
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "using upstream ref: $REF"
+
+      - name: Resolve version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ steps.recipe.outputs.repo }}
+          REF: ${{ steps.ref.outputs.ref }}
+        run: |
+          set -euo pipefail
+          V=""
+          for f in package.json Cargo.toml; do
+            RAW="$(curl -fsSL "https://raw.githubusercontent.com/$REPO/$REF/$f" 2>/dev/null || true)"
+            [ -z "$RAW" ] && continue
+            case "$f" in
+              package.json) V="$(printf '%s' "$RAW" | jq -r '.version // empty')" ;;
+              Cargo.toml)   V="$(printf '%s' "$RAW" | sed -n 's/^version *= *"\(.*\)"/\1/p' | head -1)" ;;
+            esac
+            [ -n "$V" ] && break
+          done
+          # tag se fallback: v1.2.3 → 1.2.3
+          if [ -z "$V" ]; then V="$(echo "$REF" | sed -n 's/^v\{0,1\}\([0-9][0-9.]*\).*/\1/p')"; fi
+          [ -n "$V" ] || V="0.0.0-$(date -u +%Y%m%d)-$(echo "$REF" | tr -cd '[:alnum:]' | cut -c1-7)"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "resolved version: $V"
+
+      - name: Resolve targets + shards
+        id: targets
+        env:
+          INPUT_TARGETS: ${{ inputs.targets }}
+          SHARDS: ${{ inputs.shards }}
+          PROJECT: ${{ inputs.project }}
+        run: |
+          set -euo pipefail
+          R="registry/$PROJECT.json"
+          if [ -n "$INPUT_TARGETS" ]; then
+            T="$INPUT_TARGETS"
+          else
+            T="$(jq -r '(.defaultTargets // .targets) | join(",")' "$R")"
+          fi
+          echo "targets=$T" >> "$GITHUB_OUTPUT"
+          if echo ",$T," | grep -q ",android-arm64,"; then
+            echo "need_ndk=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "need_ndk=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # targets ko N shards mein baanto (parallel jobs)
+          python3 - "$T" "$SHARDS" <<'PY' >> "$GITHUB_OUTPUT"
+          import json, sys
+          targets = [t for t in sys.argv[1].split(",") if t]
+          n = max(1, int(sys.argv[2]))
+          shards = [targets[i::n] for i in range(n)]
+          shards = [{"index": i, "targets": ",".join(s)} for i, s in enumerate(shards) if s]
+          print("shards=" + json.dumps({"include": shards}))
+          PY
+          tail -3 "$GITHUB_OUTPUT"
+
+      - name: Compute release tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.release_tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="v${VERSION}-cf.${{ github.run_number }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "release tag: $TAG"
+
+      - name: Plan summary
+        run: |
+          {
+            echo "## 🧭 Build plan"
+            echo ""
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| project | \`${{ steps.recipe.outputs.project }}\` |"
+            echo "| upstream | \`${{ steps.recipe.outputs.repo }}@${{ steps.ref.outputs.ref }}\` |"
+            echo "| version | \`${{ steps.version.outputs.version }}\` |"
+            echo "| targets | \`${{ steps.targets.outputs.targets }}\` |"
+            echo "| shards | ${{ inputs.shards }} |"
+            echo "| release tag | \`${{ steps.tag.outputs.tag }}\` |"
+            echo "| android NDK | ${{ steps.targets.outputs.need_ndk }} |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ----------------------------------------------------------------------------
+  # 2. Build (sharded, parallel). Har shard: swap → toolchain → clone → compile
+  # ----------------------------------------------------------------------------
+  build:
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.shards) }}
+    steps:
+      - name: 📊 Shard info
+        run: |
+          echo "shard ${{ matrix.index }} → ${{ matrix.targets }}"
+          echo "### 🏗️ Shard ${{ matrix.index }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`${{ matrix.targets }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # ---- swap: 16 GB RAM ke saath bhi "no swap" runners OOM maar dete hain ----
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-swap
+        with:
+          size: 8G
+
+      - uses: ./.github/actions/setup-toolchain
+        with:
+          bun-version: ${{ needs.resolve.outputs.bun_version }}
+          go-version: "1.23.x"
+          rust: ${{ needs.resolve.outputs.build_system == 'rust' }}
+          ndk: ${{ needs.resolve.outputs.need_ndk }}
+
+      - name: 📥 Checkout upstream
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.resolve.outputs.repo }}
+          ref: ${{ needs.resolve.outputs.ref }}
+          path: work/${{ needs.resolve.outputs.project }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: 🏷️ Record upstream commit
+        id: commit
+        run: |
+          C="$(git -C "work/${{ needs.resolve.outputs.project }}" rev-parse HEAD)"
+          echo "sha=$C" >> "$GITHUB_OUTPUT"
+          echo "CF_UPSTREAM_COMMIT=$C" >> "$GITHUB_ENV"
+          echo "upstream commit: $C"
+
+      - name: 🔧 Download android native libs
+        if: ${{ inputs.android_libs_artifact != '' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.android_libs_artifact }}
+          path: android-libs
+
+      - name: 🛠️ Build
+        env:
+          CF_ANDROID_LIBS_DIR: ${{ github.workspace }}/android-libs
+          CF_CHANNEL: ${{ inputs.prerelease && 'nightly' || 'latest' }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2086
+          bash scripts/builders/dispatch.sh \
+            --recipe "registry/${{ needs.resolve.outputs.project }}.json" \
+            --upstream "$GITHUB_WORKSPACE/work/${{ needs.resolve.outputs.project }}" \
+            --out "$GITHUB_WORKSPACE/artifacts/raw" \
+            --targets "${{ matrix.targets }}" \
+            --version "${{ needs.resolve.outputs.version }}" \
+            --ref "${{ needs.resolve.outputs.ref }}"
+
+      - name: 📤 Upload shard artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cf-${{ needs.resolve.outputs.project }}-shard${{ matrix.index }}
+          path: |
+            artifacts/raw/*.zip
+            artifacts/raw/*.tar.gz
+            artifacts/raw/SHA256SUMS
+          if-no-files-found: error
+
+      - name: 📦 Upload raw target dirs (debug + release assembly)
+        uses: actions/upload-artifact@v4
+        with:
+          name: cf-${{ needs.resolve.outputs.project }}-dirs${{ matrix.index }}
+          path: artifacts/raw/*/
+          if-no-files-found: warn
+
+  # ----------------------------------------------------------------------------
+  # 3. Smoke tests — sirf native binaries actually RUN hote hain
+  # ----------------------------------------------------------------------------
+  smoke-linux:
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    if: ${{ contains(needs.resolve.outputs.targets, 'linux-x64') }}
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cf-${{ needs.resolve.outputs.project }}-dirs*
+          merge-multiple: true
+          path: smoke
+      - name: ▶️ run --version on linux-x64
+        run: |
+          set -euo pipefail
+          BIN="$(find smoke -maxdepth 3 -type f -path '*linux-x64/bin/*' ! -name '*.json' | head -1)"
+          [ -n "$BIN" ] || { echo "::error::linux-x64 binary not found"; find smoke -maxdepth 3 | head -50; exit 1; }
+          chmod +x "$BIN"
+          OUT="$("$BIN" --version)"
+          echo "output: $OUT"
+          [ -n "$OUT" ] || { echo "::error::binary produced no output"; exit 1; }
+          echo "✅ linux-x64 smoke test passed: $OUT"
+
+  smoke-windows:
+    needs: [resolve, build]
+    runs-on: windows-latest
+    if: ${{ contains(needs.resolve.outputs.targets, 'windows-x64') }}
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cf-${{ needs.resolve.outputs.project }}-dirs*
+          merge-multiple: true
+          path: smoke
+      - name: ▶️ run --version on windows-x64
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path smoke -Recurse -Filter "opencode.exe" | Select-Object -First 1
+          if (-not $exe) { Write-Host "::error::windows binary not found"; Get-ChildItem -Recurse smoke | Select-Object -First 40; exit 1 }
+          $out = & $exe.FullName --version
+          Write-Host "output: $out"
+          if (-not $out) { Write-Host "::error::no output"; exit 1 }
+          Write-Host "✅ windows-x64 smoke test passed: $out"
+
+  # ----------------------------------------------------------------------------
+  # 4. Release — artifacts → GitHub Release (yeh step binary ko "publish" karta hai)
+  # ----------------------------------------------------------------------------
+  release:
+    needs: [resolve, build]
+    if: ${{ inputs.publish }}
+    runs-on: ubuntu-latest
+    outputs:
+      release_url: ${{ steps.publish.outputs.release_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 📥 Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cf-${{ needs.resolve.outputs.project }}-shard*
+          merge-multiple: true
+          path: dist
+
+      - name: 🧾 Checksums + release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          REPO: ${{ needs.resolve.outputs.repo }}
+          REF: ${{ needs.resolve.outputs.ref }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          TAG: ${{ needs.resolve.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          cd dist
+          find . -maxdepth 1 -type f -printf '%f\n' | sort
+          sha256sum ./*.zip ./*.tar.gz 2>/dev/null | sort -k2 > SHA256SUMS || true
+          echo "--- SHA256SUMS ---"; cat SHA256SUMS
+          cd ..
+
+          # installer scripts release ke saath attach hote hain
+          cp install.sh dist/ 2>/dev/null || true
+          cp install.ps1 dist/ 2>/dev/null || true
+          cp termux/install.sh dist/termux-install.sh 2>/dev/null || true
+          chmod +x dist/install.sh dist/termux-install.sh 2>/dev/null || true
+
+          {
+            echo "## 📦 CrossForge build of \`$PROJECT\`"
+            echo ""
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| upstream | [\`$REPO\`](https://github.com/$REPO) @ \`$REF\` |"
+            echo "| version | \`$VERSION\` |"
+            echo "| built by | GitHub Actions run [#${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) |"
+            echo "| commit | \`${{ github.sha }}\` |"
+            echo ""
+            echo "### Download"
+            echo ""
+            echo "| platform | asset |"
+            echo "|---|---|"
+            for f in dist/*.zip dist/*.tar.gz; do
+              [ -e "$f" ] || continue
+              b="$(basename "$f")"
+              echo "| $b | [\`$b\`](https://github.com/${{ github.repository }}/releases/download/$TAG/$b) |"
+            done
+            echo ""
+            echo "### Install"
+            echo ""
+            echo '```bash'
+            echo "# Linux / macOS"
+            echo "curl -fsSL https://github.com/${{ github.repository }}/releases/download/$TAG/install.sh | bash"
+            echo ""
+            echo "# Termux / Android"
+            echo "curl -fsSL https://github.com/${{ github.repository }}/releases/download/$TAG/termux-install.sh | bash"
+            echo '```'
+            echo ""
+            echo '```powershell'
+            echo "# Windows"
+            echo "irm https://github.com/${{ github.repository }}/releases/download/$TAG/install.ps1 | iex"
+            echo '```'
+            echo ""
+            echo "Verify downloads with \`SHA256SUMS\`."
+            echo ""
+            echo "---"
+            echo "_Built automatically from public source by [CrossForge](https://github.com/${{ github.repository }}). Not an official upstream release._"
+          } > release-notes.md
+
+      - name: 🚀 Publish GitHub Release
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.release_tag }}
+          NAME: ${{ inputs.release_name }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          RELEASE_NAME="${NAME:-$TAG}"
+          LATEST="true"
+          [ "$PRERELEASE" = "true" ] && LATEST="false"
+
+          ARGS=(--title "$RELEASE_NAME" --notes-file release-notes.md --latest="$LATEST")
+          [ "$PRERELEASE" = "true" ] && ARGS+=(--prerelease)
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" "${ARGS[@]}"
+          else
+            gh release create "$TAG" dist/* "${ARGS[@]}"
+          fi
+
+          URL="$(gh release view "$TAG" --json url --jq .url)"
+          echo "release_url=$URL" >> "$GITHUB_OUTPUT"
+          echo "🚀 published: $URL"
+
+      - name: 🧾 Release summary
+        run: |
+          {
+            echo "## ✅ Release published"
+            echo ""
+            echo "${{ steps.publish.outputs.release_url }}"
+            echo ""
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ----------------------------------------------------------------------------
+  # 5. Issue comment (build request flow ka closing the loop)
+  # ----------------------------------------------------------------------------
+  notify:
+    needs: [resolve, build, release]
+    if: ${{ always() && inputs.issue_number != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 💬 Comment on the request issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE: ${{ inputs.issue_number }}
+        run: |
+          set -euo pipefail
+          STATUS="${{ needs.build.result }}"
+          URL="${{ needs.release.outputs.release_url }}"
+          RUN="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          if [ "$STATUS" = "success" ]; then
+            BODY=$(cat <<EOF
+          ✅ **Build complete — \`${{ needs.resolve.outputs.project }}\` \`${{ needs.resolve.outputs.version }}\`**
+
+          | | |
+          |---|---|
+          | targets | \`${{ needs.resolve.outputs.targets }}\` |
+          | upstream | \`${{ needs.resolve.outputs.repo }}@${{ needs.resolve.outputs.ref }}\` |
+          | release | ${URL:-"(publish disabled)"} |
+          | logs | [Actions run]($RUN) |
+
+          **Termux / Android:**
+          \`\`\`bash
+          curl -fsSL ${URL}/download/termux-install.sh | bash
+          \`\`\`
+
+          **Linux / macOS:**
+          \`\`\`bash
+          curl -fsSL ${URL}/download/install.sh | bash
+          \`\`\`
+
+          **Windows:**
+          \`\`\`powershell
+          irm ${URL}/download/install.ps1 | iex
+          \`\`\`
+
+          _Built from public source by GitHub Actions — SHA256SUMS release ke saath hai._
+          EOF
+            )
+          else
+            BODY=$(cat <<EOF
+          ❌ **Build failed for \`${{ needs.resolve.outputs.project }}\`** (status: \`$STATUS\`)
+
+          Logs: [$RUN]($RUN)
+
+          Yeh usually upstream ke code/toolchain change ki wajah se hota hai. Maintainer log dekh kar
+          recipe update karega, phir dobara trigger kar dega.
+          EOF
+            )
+          fi
+
+          gh issue comment "$ISSUE" --body "$BODY"

@@ -1,0 +1,62 @@
+{
+  "$comment": "CrossForge registry index. Add a project here after its build request issue is approved (cf:approved).",
+  "schema": "./schema/recipe.schema.json",
+  "updated": "2026-10-01",
+  "projects": [
+    {
+      "id": "opencode",
+      "name": "opencode",
+      "repo": "anomalyco/opencode",
+      "license": "MIT",
+      "buildSystem": "bun",
+      "recipe": "./opencode.json",
+      "targets": [
+        "linux-x64",
+        "linux-x64-baseline",
+        "linux-arm64",
+        "linux-x64-musl",
+        "linux-x64-musl-baseline",
+        "linux-arm64-musl",
+        "darwin-x64",
+        "darwin-arm64",
+        "windows-x64",
+        "windows-x64-baseline",
+        "windows-arm64",
+        "android-arm64"
+      ],
+      "nightly": true,
+      "enabled": true,
+      "flagship": true
+    }
+  ],
+  "allowlist": {
+    "licenses": [
+      "0BSD",
+      "Apache-2.0",
+      "BSD-2-Clause",
+      "BSD-3-Clause",
+      "BSL-1.0",
+      "CC0-1.0",
+      "EPL-2.0",
+      "GPL-2.0",
+      "GPL-2.0-only",
+      "GPL-3.0",
+      "GPL-3.0-only",
+      "ISC",
+      "LGPL-2.1",
+      "LGPL-3.0",
+      "MIT",
+      "MPL-2.0",
+      "Unlicense",
+      "Zlib"
+    ],
+    "deny": [
+      "NOASSERTION",
+      "UNLICENSED",
+      "LicenseRef-Proprietary",
+      "BUSL-1.1",
+      "Elastic-2.0",
+      "SSPL-1.0"
+    ]
+  }
+}

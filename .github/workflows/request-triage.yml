@@ -1,0 +1,148 @@
+# ==============================================================================
+# CrossForge · request triage
+# ------------------------------------------------------------------------------
+# Jab koi naya build request issue aata hai:
+#   • license check (OSI allowlist / deny-list)
+#   • build system auto-detect (go.mod / Cargo.toml / package.json / pyproject)
+#   • ek verdict comment + labels (cf:license-ok / cf:license-blocked / cf:needs-info)
+#
+# Maintainer phir `cf:approved` label lagata hai → build-request.yml chalta hai.
+# ==============================================================================
+name: request triage
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  triage:
+    if: >-
+      contains(github.event.issue.labels.*.name, 'build-request') &&
+      github.event.action == 'opened' || contains(github.event.issue.labels.*.name, 'cf:triage')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 🔎 Inspect the request
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$BODY" > /tmp/issue.md
+
+          RAW_URL="$(bash scripts/lib/parse-issue.sh /tmp/issue.md "Repository URL")"
+          SLUG="$(printf '%s' "$RAW_URL" | sed -E 's#^https?://(www\.)?github\.com/##; s#\.git$##; s#/+$##')"
+          TARGETS="$(bash scripts/lib/parse-issue.sh /tmp/issue.md "Targets")"
+
+          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+
+          if [ -z "$SLUG" ] || ! printf '%s' "$SLUG" | grep -qE '^[^/]+/[^/]+$'; then
+            echo "verdict=needs-info" >> "$GITHUB_OUTPUT"
+            echo "detail=Repository URL missing ya galat format me hai (https://github.com/owner/name)." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # --- repo reachable? -------------------------------------------------
+          if ! gh api "repos/$SLUG" >/tmp/repo.json 2>/dev/null; then
+            echo "verdict=needs-info" >> "$GITHUB_OUTPUT"
+            echo "detail=Repo \`$SLUG\` public nahi hai ya access nahi mila." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          SPDX="$(jq -r '.license.spdx_id // "NOASSERTION"' /tmp/repo.json)"
+          STARS="$(jq -r '.stargazers_count' /tmp/repo.json)"
+          ARCHIVED="$(jq -r '.archived' /tmp/repo.json)"
+          DESC="$(jq -r '.description // ""' /tmp/repo.json)"
+          echo "spdx=$SPDX" >> "$GITHUB_OUTPUT"
+
+          # --- build system detection ------------------------------------------
+          LANG="$(jq -r '.language // ""' /tmp/repo.json)"
+          SYSTEM="unknown"
+          for probe in "go.mod:go" "Cargo.toml:rust" "package.json:bun" "pyproject.toml:python" "requirements.txt:python"; do
+            f="${probe%%:*}"; s="${probe##*:}"
+            if gh api "repos/$SLUG/contents/$f" >/dev/null 2>&1; then SYSTEM="$s"; break; fi
+          done
+          # bun > node when a bun.lock exists
+          gh api "repos/$SLUG/contents/bun.lock" >/dev/null 2>&1 && SYSTEM="bun"
+          echo "system=$SYSTEM" >> "$GITHUB_OUTPUT"
+
+          # --- license verdict ---------------------------------------------------
+          ALLOWED="$(jq -r '.allowlist.licenses[]' registry/index.json)"
+          DENIED="$(jq -r '.allowlist.deny[]' registry/index.json)"
+          VERDICT="needs-review"
+          if echo "$DENIED" | grep -qx "$SPDX"; then VERDICT="blocked"; fi
+          if echo "$ALLOWED" | grep -qx "$SPDX"; then VERDICT="ok"; fi
+          echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "detail<<EOF"
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| repo | [\`$SLUG\`](https://github.com/$SLUG) |"
+            echo "| description | $DESC |"
+            echo "| license | **\`$SPDX\`** |"
+            echo "| language | \`$LANG\` |"
+            echo "| detected build system | \`$SYSTEM\` |"
+            echo "| stars | $STARS |"
+            echo "| archived | $ARCHIVED |"
+            echo "| requested targets | ${TARGETS:-(none selected)} |"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 💬 Post verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERDICT: ${{ steps.check.outputs.verdict }}
+          DETAIL: ${{ steps.check.outputs.detail }}
+          SPDX: ${{ steps.check.outputs.spdx }}
+          SYSTEM: ${{ steps.check.outputs.system }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          case "$VERDICT" in
+            ok)
+              HEADER="✅ **License check pass — maintainer approval ka intezaar**"
+              FOOTER="Ek maintainer \`cf:approved\` label lagayega, uske baad build automatically chalu ho jayega.
+          Agar aap maintainer ho: label laga do → build shuru. 🏗️"
+              ;;
+            blocked)
+              HEADER="🚫 **License allow nahi karta**"
+              FOOTER="Yeh project \`$SPDX\` license par hai, jo humari allowlist me nahi hai.
+          Hum sirf OSI-approved open-source projects build karte hain.
+
+          Agar upstream maintainer redistribution allow karta hai to issue me likho — hum review karenge."
+              ;;
+            needs-info)
+              HEADER="❓ **Thoda aur info chahiye**"
+              FOOTER="Form update karke dobara save karo — bot phir se check karega."
+              ;;
+            *)
+              HEADER="🔍 **Manual review chahiye**"
+              FOOTER="License detect nahi ho paya ya unusual hai. Ek maintainer manually dekh kar
+          \`cf:approved\` ya \`cf:license-blocked\` label lagayega."
+              ;;
+          esac
+
+          gh issue comment "$ISSUE" --body "$(cat <<EOF
+          $HEADER
+
+          $DETAIL
+
+          **Detected build system:** \`$SYSTEM\`
+
+          $FOOTER
+          EOF
+          )"
+
+          case "$VERDICT" in
+            ok)          gh issue edit "$ISSUE" --add-label "cf:license-ok" || true ;;
+            blocked)     gh issue edit "$ISSUE" --add-label "cf:license-blocked" || true ;;
+            needs-info)  gh issue edit "$ISSUE" --add-label "cf:needs-info" || true ;;
+            *)           gh issue edit "$ISSUE" --add-label "cf:needs-review" || true ;;
+          esac

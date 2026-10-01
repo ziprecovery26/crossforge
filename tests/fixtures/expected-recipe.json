@@ -1,0 +1,37 @@
+{
+  "$schema": "./schema/recipe.schema.json",
+  "id": "ripgrep",
+  "name": "ripgrep",
+  "description": "Auto-registered from build request issue #42",
+  "upstream": {
+    "repo": "BurntSushi/ripgrep",
+    "url": "https://github.com/BurntSushi/ripgrep",
+    "ref": "14.1.1",
+    "refStrategy": "pinned"
+  },
+  "license": {
+    "spdx": "UNKNOWN",
+    "redistributable": false,
+    "notes": "Filled by the triage workflow after verification"
+  },
+  "buildSystem": "rust",
+  "custom": {
+    "build": "cmd/rg",
+    "binaryName": "ripgrep"
+  },
+  "targets": [
+    "android-arm64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "defaultTargets": [
+    "android-arm64",
+    "linux-arm64",
+    "linux-x64"
+  ],
+  "nightly": false,
+  "enabled": true,
+  "notes": [
+    "requested in issue #42 at 2026-10-01T07:04:03Z"
+  ]
+}

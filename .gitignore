@@ -1,0 +1,37 @@
+# deps / build output
+node_modules/
+dist/
+out/
+build/
+*.tsbuildinfo
+
+# build workspaces (created by workflows)
+.work/
+.work-*/
+worktrees/
+upstream/
+artifacts/
+!registry/**/artifacts/
+
+# logs
+*.log
+logs/
+
+# editors / os
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# secrets — NEVER commit
+.env
+.env.*
+*.pem
+*.key
+*.p12
+!**/*.pub
+
+# swap files (we create these on CI runners, never in the repo)
+swapfile
+/swapfile

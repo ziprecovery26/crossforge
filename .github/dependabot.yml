@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "github-actions"]
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # the drivers have no package.json of their own, but this keeps
+  # any future tooling in the repo up to date
+  - package-ecosystem: "npm"
+    directory: "/drivers/opencode"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3

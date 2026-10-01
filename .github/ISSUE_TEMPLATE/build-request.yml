@@ -1,0 +1,111 @@
+name: 🔨 Build Request
+description: Kisi open-source project ke pre-built binaries (Windows / Linux / macOS / Android-Termux) request karo
+title: "[Build Request] "
+labels: ["build-request", "cf:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Kaise kaam karta hai
+        1. Yeh form bharo — hum **license aur safety verify** karenge.
+        2. Maintainer `cf:approved` label lagayega.
+        3. GitHub Actions tumhare project ko **cross-compile** karega aur binariess
+           **GitHub Release** mein publish honge. Result **isi issue par comment** hoga.
+
+        > ⚠️ Sirf **open-source (OSI-approved license)** projects. Closed-source / "no license" = reject.
+
+  - type: input
+    id: project_name
+    attributes:
+      label: Project name
+      description: Short naam, lowercase (yeh registry id banega)
+      placeholder: "jaise: ripgrep"
+    validations:
+      required: true
+
+  - type: input
+    id: repo_url
+    attributes:
+      label: Repository URL
+      description: Public GitHub repo ka full URL
+      placeholder: "https://github.com/owner/name"
+    validations:
+      required: true
+
+  - type: input
+    id: ref
+    attributes:
+      label: Version / Tag / Commit
+      description: Konsa exact point build karna hai? Khaali chhodo to latest release tag use hoga.
+      placeholder: "v14.1.1  |  main  |  9f8a1c2"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: build_system
+    attributes:
+      label: Build system
+      description: Agar pata nahi to "auto-detect" chuno — bot repo dekh kar decide karega.
+      options:
+        - auto-detect
+        - bun (bun build --compile, opencode jaisa)
+        - node / npm (pkg-style)
+        - go
+        - rust / cargo
+        - python (PyInstaller)
+        - other / custom script
+    validations:
+      required: true
+
+  - type: input
+    id: entrypoint
+    attributes:
+      label: Entrypoint / build command (optional)
+      description: Bun/Node projects ke liye entry file; custom ke liye build command.
+      placeholder: "src/index.ts  |  make release  |  ./build.sh"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: targets
+    attributes:
+      label: Targets
+      description: Kaunse platforms ke binaries chahiye?
+      options:
+        - label: "🪟 Windows (x64)"
+          required: false
+        - label: "🪟 Windows (arm64)"
+          required: false
+        - label: "🐧 Linux x64 (glibc)"
+          required: false
+        - label: "🐧 Linux arm64 (glibc)"
+          required: false
+        - label: "🐧 Linux musl (Alpine/Docker)"
+          required: false
+        - label: "🍎 macOS (Intel + Apple Silicon)"
+          required: false
+        - label: "📱 Android / Termux (aarch64)"
+          required: false
+    validations:
+      required: true
+
+  - type: textarea
+    id: usecase
+    attributes:
+      label: Kyun chahiye? (use case)
+      description: Chhota sa reason — priority decide karne mein help karta hai.
+      placeholder: "Bhai mere pass sirf phone hai, Termux me isko chalana hai..."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: legal
+    attributes:
+      label: Confirmations (sab tick karo)
+      options:
+        - label: "Yeh project open-source hai aur uski license redistribution allow karti hai."
+          required: true
+        - label: "Main upstream project ka maintainer nahi hoon, ya agar hoon to mujhe koi aitraaz nahi hai."
+          required: true
+        - label: "Main samajhta hoon ki yeh binaries CrossForge ke automated build hain, upstream ke official releases nahi."
+          required: true

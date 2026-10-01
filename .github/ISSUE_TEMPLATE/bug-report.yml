@@ -1,0 +1,42 @@
+name: 🐛 Bug report
+description: Build fail hua, binary chala nahi, ya galat asset mila
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: input
+    id: release
+    attributes:
+      label: Release / tag
+      placeholder: "v1.18.34-cf.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target
+      options:
+        - windows-x64
+        - windows-arm64
+        - linux-x64
+        - linux-arm64
+        - linux-x64-musl
+        - linux-arm64-musl
+        - darwin-x64
+        - darwin-arm64
+        - android-arm64
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: Kya hua?
+      description: Exact command + output paste karo (error message poora).
+    validations:
+      required: true
+  - type: input
+    id: checksum
+    attributes:
+      label: SHA256 checksum match hua?
+      placeholder: "haan / nahi / check nahi kiya"
+    validations:
+      required: false
