@@ -64,6 +64,35 @@ Script kya karti hai:
    chalati hai (kai target spellings try karti hai, Zig ke syntax changes se bachne ke liye).
 4. Output ko verify karti hai: `file` ke hisaab se **ARM aarch64** hona chahiye, warna reject.
 
+### Zig + bionic: asli challenge (aur uska fix)
+
+Zig 0.15 khud bionic libc **provide nahi karta**. Android target par dynamic link karte waqt yeh
+error aata hai:
+
+```
+error: unable to provide libc for target 'aarch64-linux.5.10...6.16-android.24'
+info: zig can provide libc for related target aarch64-linux.3.7.0-gnu.2.17
+```
+
+`--sysroot` dena kaafi nahi hai. Solution: Zig ka **"cross compilation libc kit"** — ek chhoti
+text file jo NDK sysroot ki paths batati hai, aur `zig build-lib --libc <file>`:
+
+```
+include_dir=<ndk>/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include
+sys_include_dir=<ndk>/.../sysroot/usr/include/aarch64-linux-android
+crt_dir=<ndk>/.../sysroot/usr/lib/aarch64-linux-android/24
+msvc_lib_dir=
+kernel32_lib_dir=
+gcc_dir=
+dynamic_linker=/system/bin/linker64
+```
+
+`zig build` ke paas `--libc` ka koi CLI flag nahi hai, to hum `std.Build.libc_file` set karne ke
+liye ek out-of-tree patch lagate hain (`patches/0002-android-libc-kit.patch`), aur doosra patch
+(`0001`) Android par `-ldl/-lpthread` skip karta hai (bionic me woh libc ke andar hote hain).
+
+Yeh sab `android/opentui/build-opentui-android.sh` khud karta hai — libc kit bhi wahi banata hai.
+
 **Agar yeh build fail ho jaye** (upstream layout change, Zig version mismatch, etc.):
 
 * workflow **fail nahi hota** — Termux binary bina `libopentui.so` publish hota hai
