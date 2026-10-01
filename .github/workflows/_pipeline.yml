@@ -72,6 +72,8 @@ jobs:
     if: ${{ inputs.targets == '' || contains(inputs.targets, 'android-arm64') }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
       - uses: ./.github/actions/setup-swap
         with:
           size: 8G

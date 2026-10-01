@@ -74,8 +74,13 @@ if [ -n "$DRIVER_REL" ]; then
   # ---- Project with a dedicated CrossForge driver (currently: opencode) -------
   cf::log "using dedicated driver: $DRIVER_REL"
   DRIVER_SRC="$ROOT_DIR/$DRIVER_REL"
-  DRIVER_DST_REL="$(jq -r '.upstream.monorepo.driverTargetDir // "script/build-matrix.ts"' "$RECIPE")"
-  DRIVER_DST="$UPSTREAM/$MONOREPO_PKG_DIR/$DRIVER_DST_REL"
+  # driverTargetDir upstream checkout ke ROOT se relative hai (e.g. "packages/opencode/script/build-matrix.ts")
+  DRIVER_DST_REL="$(jq -r '.upstream.monorepo.driverTargetDir // empty' "$RECIPE")"
+  if [ -z "$DRIVER_DST_REL" ]; then
+    DRIVER_DST_REL="$MONOREPO_PKG_DIR/script/build-matrix.ts"
+    cf::warn "recipe me driverTargetDir nahi hai — fallback: $DRIVER_DST_REL"
+  fi
+  DRIVER_DST="$UPSTREAM/$DRIVER_DST_REL"
   [ -f "$DRIVER_SRC" ] || cf::die "driver missing: $DRIVER_SRC"
   mkdir -p "$(dirname "$DRIVER_DST")"
   cp "$DRIVER_SRC" "$DRIVER_DST"

@@ -98,7 +98,11 @@ jobs:
       build_system: ${{ steps.recipe.outputs.build_system }}
       android_enabled: ${{ steps.recipe.outputs.android_enabled }}
     steps:
+      # NOTE: recipe registry/ me rehta hai aur build-request flow use isi run me
+      # commit karta hai. Isliye event-SHA ke bajaye branch HEAD checkout karna zaroori hai.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Read recipe
         id: recipe
@@ -247,6 +251,8 @@ jobs:
 
       # ---- swap: 16 GB RAM ke saath bhi "no swap" runners OOM maar dete hain ----
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
       - uses: ./.github/actions/setup-swap
         with:
           size: 8G
@@ -325,6 +331,8 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
       - uses: actions/download-artifact@v4
         with:
           pattern: cf-${{ needs.resolve.outputs.project }}-dirs*
@@ -348,6 +356,8 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
       - uses: actions/download-artifact@v4
         with:
           pattern: cf-${{ needs.resolve.outputs.project }}-dirs*
@@ -374,6 +384,8 @@ jobs:
       release_url: ${{ steps.publish.outputs.release_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: 📥 Download all build artifacts
         uses: actions/download-artifact@v4
@@ -501,16 +513,19 @@ jobs:
           set -euo pipefail
           STATUS="${{ needs.build.result }}"
           URL="${{ needs.release.outputs.release_url }}"
+          PROJECT="${{ needs.resolve.outputs.project || inputs.project }}"
+          VERSION="${{ needs.resolve.outputs.version || 'unknown' }}"
+          TARGETS="${{ needs.resolve.outputs.targets || inputs.targets }}"
           RUN="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           if [ "$STATUS" = "success" ]; then
             BODY=$(cat <<EOF
-          ✅ **Build complete — \`${{ needs.resolve.outputs.project }}\` \`${{ needs.resolve.outputs.version }}\`**
+          ✅ **Build complete — \`${PROJECT}\` \`${VERSION}\`**
 
           | | |
           |---|---|
-          | targets | \`${{ needs.resolve.outputs.targets }}\` |
-          | upstream | \`${{ needs.resolve.outputs.repo }}@${{ needs.resolve.outputs.ref }}\` |
+          | targets | \`${TARGETS}\` |
+          | upstream | \`${{ needs.resolve.outputs.repo || inputs.project }}@${{ needs.resolve.outputs.ref || inputs.ref }}\` |
           | release | ${URL:-"(publish disabled)"} |
           | logs | [Actions run]($RUN) |
 
@@ -534,7 +549,7 @@ jobs:
             )
           else
             BODY=$(cat <<EOF
-          ❌ **Build failed for \`${{ needs.resolve.outputs.project }}\`** (status: \`$STATUS\`)
+          ❌ **Build failed for \`${PROJECT}\`** (status: \`${STATUS}\`)
 
           Logs: [$RUN]($RUN)
 

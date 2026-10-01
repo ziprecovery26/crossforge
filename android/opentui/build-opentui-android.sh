@@ -43,21 +43,42 @@ mkdir -p "$OUT"
 # ------------------------------------------------------------------------------
 install_zig() {
   if command -v zig >/dev/null 2>&1 && zig version | grep -q "^${ZIG_VERSION}"; then
-    cf::log "zig $ZIG_VERSION already available"
+    cf::log "zig $ZIG_VERSION already available ($(command -v zig))"
     return 0
   fi
-  local arch="x86_64" os="linux"
-  case "$(uname -s)" in Darwin) os="macos" ;; esac
-  case "$(uname -m)" in aarch64|arm64) arch="aarch64" ;; esac
-  # Zig renamed the macOS tarball suffix from -macos to -macos-<arch> in 0.15+
-  local url="https://ziglang.org/download/${ZIG_VERSION}/zig-${os}-${arch}-${ZIG_VERSION}.tar.xz"
+
+  local arch os
+  case "$(uname -m)" in aarch64|arm64) arch="aarch64" ;; *) arch="x86_64" ;; esac
+  case "$(uname -s)" in Darwin) os="macos" ;; *) os="linux" ;; esac
+
+  mkdir -p "$WORK/zig" "$WORK/zigdl"
+
+  # Zig ne 0.14+ me tarball naming badal di: zig-<arch>-<os>-<ver>.tar.xz
+  # Isliye pehle official index.json se *exact* URL lete hain, phir fallbacks.
+  local url=""
+  url="$(curl -fsSL https://ziglang.org/download/index.json 2>/dev/null \
+    | jq -r --arg v "$ZIG_VERSION" --arg k "${arch}-${os}" '.[$v][$k].tarball // empty' 2>/dev/null || true)"
+  if [ -n "$url" ] && curl -fsI -o /dev/null "$url" 2>/dev/null; then
+    cf::log "zig URL (index.json): $url"
+  else
+    url=""
+    for cand in \
+      "https://ziglang.org/download/${ZIG_VERSION}/zig-${arch}-${os}-${ZIG_VERSION}.tar.xz" \
+      "https://ziglang.org/download/${ZIG_VERSION}/zig-${os}-${arch}-${ZIG_VERSION}.tar.xz"
+    do
+      if curl -fsI -o /dev/null "$cand" 2>/dev/null; then url="$cand"; break; fi
+      cf::warn "404: $cand"
+    done
+  fi
+  [ -n "$url" ] || cf::die "zig ${ZIG_VERSION} ka download URL nahi mila. Available versions: https://ziglang.org/download/"
+
   cf::log "downloading $url"
-  mkdir -p "$WORK/zig"
-  curl -fsSL -o "$WORK/zig.tar.xz" "$url" || cf::die "zig download failed ($url)"
-  tar -xJf "$WORK/zig.tar.xz" -C "$WORK/zig" --strip-components=1
+  curl -fsSL --retry 3 -o "$WORK/zigdl/zig.tar.xz" "$url" || cf::die "zig download failed"
+  tar -xJf "$WORK/zigdl/zig.tar.xz" -C "$WORK/zig" --strip-components=1
+  [ -x "$WORK/zig/zig" ] || cf::die "zig binary not found after extract"
   export PATH="$WORK/zig:$PATH"
-  printf '%s\n' "$WORK/zig" >> "${GITHUB_PATH:-/dev/null}" 2>/dev/null || true
-  zig version
+  if [ -n "${GITHUB_PATH:-}" ]; then printf '%s\n' "$WORK/zig" >> "$GITHUB_PATH"; fi
+  cf::log "zig installed: $(zig version)"
 }
 
 install_zig
