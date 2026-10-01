@@ -36,7 +36,7 @@ export CF_PROJECT
 declare -a BINS=()
 while IFS= read -r line; do [ -n "$line" ] && BINS+=("$line"); done < <(jq -r '(.rust.bins // [])[]' "$RECIPE")
 FEATURES="$(jq -r '.rust.features // empty' "$RECIPE")"
-NO_DEFAULT="$(jq -r '.rust.no-default-features // false' "$RECIPE")"
+NO_DEFAULT="$(jq -r '.["rust"]["no-default-features"] // false' "$RECIPE")"
 
 PKG_DIR="$UPSTREAM/$(jq -r '.upstream.subdir // "."' "$RECIPE")"
 cd "$PKG_DIR" || cf::die "upstream subdir not found: $PKG_DIR"
@@ -44,11 +44,13 @@ cd "$PKG_DIR" || cf::die "upstream subdir not found: $PKG_DIR"
 # Prefer cargo-zigbuild (no macOS machine needed for darwin targets). Fall back
 # to plain cargo when zig isn't available.
 BUILDER="cargo"
-if command -v cargo-zigbuild >/dev/null 2>&1; then
+if command -v cargo-zigbuild >/dev/null 2>&1 && command -v zig >/dev/null 2>&1 && zig version >/dev/null 2>&1; then
   BUILDER="cargo zigbuild"
-  cf::log "using cargo-zigbuild ($(cargo zigbuild --version 2>/dev/null | head -1))"
+  cf::log "using cargo-zigbuild ($(cargo-zigbuild --version 2>/dev/null | head -1)) + zig $(zig version)"
+elif command -v cargo-zigbuild >/dev/null 2>&1; then
+  cf::warn "cargo-zigbuild mila par zig nahi — plain cargo use kar raha hoon (arm64/windows targets fail ho sakte hain)"
 else
-  cf::warn "cargo-zigbuild not found — falling back to cargo (host-only linking; darwin/windows targets may fail)"
+  cf::warn "cargo-zigbuild nahi mila — plain cargo use kar raha hoon (host-only linking)"
 fi
 
 if [ "${#BINS[@]}" -gt 0 ]; then

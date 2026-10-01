@@ -1,0 +1,91 @@
+# ==============================================================================
+# CrossForge · android native libs (libopentui.so)
+# ------------------------------------------------------------------------------
+# Termux/TUI ke liye native lib banata hai aur artifact ke roop me upload karta hai.
+# Release pipeline (_pipeline.yml → android-libs job) isi script ko use karta hai;
+# yeh standalone workflow fast iteration + manual verification ke liye hai.
+#
+# Output: artifact "cf-android-libs-<project>" → libopentui.so (aarch64/bionic)
+# ==============================================================================
+name: android libs
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "registry/<project>.json ka id"
+        required: false
+        type: string
+        default: "opencode"
+      opentui_ref:
+        description: "OpenTUI ref (khaali = repo variable / default)"
+        required: false
+        type: string
+        default: ""
+      zig_version:
+        description: "Zig version"
+        required: false
+        type: string
+        default: ""
+      ndk_api:
+        description: "Android API level"
+        required: false
+        type: string
+        default: "24"
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-swap
+        with:
+          size: 8G
+
+      - uses: ./.github/actions/setup-toolchain
+        with:
+          ndk: "true"
+          apt-packages: "git patch cmake ninja-build"
+
+      - name: 🧬 Build libopentui.so (aarch64 · bionic)
+        id: opentui
+        env:
+          OPENTUI_REF: ${{ inputs.opentui_ref || vars.OPENTUI_REF || 'v0.4.5' }}
+          ZIG_VERSION: ${{ inputs.zig_version || vars.OPENTUI_ZIG_VERSION || '0.15.2' }}
+          NDK_API: ${{ inputs.ndk_api || '24' }}
+        run: |
+          set -euo pipefail
+          mkdir -p out-android
+          bash android/opentui/build-opentui-android.sh \
+            --work "$RUNNER_TEMP/opentui" \
+            --out  "$GITHUB_WORKSPACE/out-android" \
+            --ref  "$OPENTUI_REF" \
+            --zig  "$ZIG_VERSION"
+
+      - name: 🔍 Verify the .so
+        run: |
+          set -euo pipefail
+          SO=out-android/libopentui.so
+          ls -la "$SO"
+          file "$SO"
+          file "$SO" | grep -q "ARM aarch64" || { echo "::error::not an aarch64 ELF"; exit 1; }
+          # bionic binaries link against /system/bin/linker64, not ld-linux
+          readelf -d "$SO" | head -20 || true
+          echo "### ✅ libopentui.so built" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          file "$SO" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📤 Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cf-android-libs-${{ inputs.project }}
+          path: out-android/libopentui.so
+          retention-days: 90
+          if-no-files-found: error

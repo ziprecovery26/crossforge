@@ -96,14 +96,24 @@ runs:
           done
         fi
 
-        # zig + cargo-zigbuild give us glibc/musl/macOS cross-linkers without a macOS machine
-        pipx install ziglang --quiet 2>/dev/null || pip3 install --quiet --break-system-packages ziglang || true
-        echo "$(python3 -c 'import sysconfig,sys; print(sysconfig.get_path("scripts", scheme="posix_prefix"), file=sys.stderr)' 2>/dev/null || echo "$HOME/.local/bin")" >> "$GITHUB_PATH"
+        # zig + cargo-zigbuild give us glibc/musl/macOS cross-linkers without a macOS machine.
+        # `pip install ziglang` ships the full zig binary inside the package dir; we
+        # symlink it onto PATH so `zig` works everywhere (cargo-zigbuild needs it).
+        if ! command -v zig >/dev/null 2>&1 || ! zig version >/dev/null 2>&1; then
+          pip3 install --quiet --break-system-packages ziglang 2>/dev/null \
+            || pip install --quiet ziglang 2>/dev/null || true
+          ZIG_PATH="$(python3 -c "import ziglang, os; print(os.path.join(os.path.dirname(ziglang.__file__), 'zig'))" 2>/dev/null || true)"
+          if [ -n "$ZIG_PATH" ] && [ -x "$ZIG_PATH" ]; then
+            sudo ln -sf "$ZIG_PATH" /usr/local/bin/zig
+            echo "zig symlinked: $ZIG_PATH"
+          fi
+        fi
+        command -v zig >/dev/null 2>&1 && zig version || echo "::warning::zig unavailable — cargo-zigbuild cross-linking will not work"
+
         if ! command -v cargo-zigbuild >/dev/null; then
           cargo install --locked cargo-zigbuild
         fi
-        zig version || true
-        cargo zigbuild --version || true
+        cargo-zigbuild --version 2>/dev/null || true
 
     - name: Setup Android NDK
       if: inputs.ndk == 'true'

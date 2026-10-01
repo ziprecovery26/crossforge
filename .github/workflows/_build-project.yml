@@ -341,7 +341,10 @@ jobs:
       - name: ▶️ run --version on linux-x64
         run: |
           set -euo pipefail
-          BIN="$(find smoke -maxdepth 3 -type f -path '*linux-x64/bin/*' ! -name '*.json' | head -1)"
+          # bin/ me NOTICE.md + LICENSE bhi hote hain — unhe "binary" mat samjho
+          BIN="$(find smoke -maxdepth 4 -type f -path '*linux-x64/bin/*' \
+                   ! -name '*.md' ! -name 'LICENSE*' ! -name '*.json' ! -name '*.txt' \
+                 | sort | head -1)"
           [ -n "$BIN" ] || { echo "::error::linux-x64 binary not found"; find smoke -maxdepth 3 | head -50; exit 1; }
           chmod +x "$BIN"
           OUT="$("$BIN" --version)"
@@ -366,7 +369,9 @@ jobs:
       - name: ▶️ run --version on windows-x64
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path smoke -Recurse -Filter "opencode.exe" | Select-Object -First 1
+          $exe = Get-ChildItem -Path smoke -Recurse -Include "*.exe" -File |
+                 Where-Object { $_.DirectoryName -like "*windows-x64*" } |
+                 Select-Object -First 1
           if (-not $exe) { Write-Host "::error::windows binary not found"; Get-ChildItem -Recurse smoke | Select-Object -First 40; exit 1 }
           $out = & $exe.FullName --version
           Write-Host "output: $out"

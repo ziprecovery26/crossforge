@@ -98,7 +98,13 @@ PATCH_DIR="$SCRIPT_DIR/patches"
 if compgen -G "$PATCH_DIR/*.patch" > /dev/null; then
   for p in "$PATCH_DIR"/*.patch; do
     cf::log "applying patch $(basename "$p")"
-    ( cd "$SRC" && git apply --verbose "$p" ) || cf::warn "patch failed (continuing): $p"
+    if ( cd "$SRC" && git apply --verbose "$p" ); then
+      cf::log "  ✓ applied"
+    elif ( cd "$SRC" && patch -p1 --forward --silent < "$p" ); then
+      cf::log "  ✓ applied (patch -p1 fallback)"
+    else
+      cf::warn "patch failed (continuing without it): $(basename "$p")"
+    fi
   done
 fi
 
