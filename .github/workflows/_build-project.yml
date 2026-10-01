@@ -161,8 +161,11 @@ jobs:
             [ -z "$RAW" ] && continue
             case "$f" in
               *package.json) V="$(printf '%s' "$RAW" | jq -r '.version // empty')" ;;
-              *Cargo.toml)   V="$(printf '%s' "$RAW" | sed -n 's/^version *= *"\(.*\)"/\1/p' | head -1)" ;;
+              # Cargo.toml me trailing comment ho sakta hai: version = "14.1.1"  #:version
+              *Cargo.toml)   V="$(printf '%s' "$RAW" | sed -n 's/^version *= *"\([^"]*\)".*/\1/p' | head -1)" ;;
             esac
+            # koi bhi whitespace/CR hata do — tag isi se banta hai
+            V="$(printf '%s' "$V" | tr -d '\r\n\t ' )"
             [ -n "$V" ] && break
           done
           # tag se fallback: v1.2.3 → 1.2.3
@@ -526,7 +529,7 @@ jobs:
           TARGETS="${{ needs.resolve.outputs.targets || inputs.targets }}"
           RUN="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          if [ "$STATUS" = "success" ]; then
+          if [ "$STATUS" = "success" ] && [ -n "$URL" ]; then
             BODY=$(cat <<EOF
           ✅ **Build complete — \`${PROJECT}\` \`${VERSION}\`**
 
@@ -553,6 +556,19 @@ jobs:
           \`\`\`
 
           _Built from public source by GitHub Actions — SHA256SUMS release ke saath hai._
+          EOF
+            )
+          elif [ "$STATUS" = "success" ]; then
+            BODY=$(cat <<EOF
+          ✅ **Binaries ban gaye — \`${PROJECT}\` \`${VERSION}\`** (release publish nahi hua)
+
+          | | |
+          |---|---|
+          | targets | \`${TARGETS}\` |
+          | logs | [Actions run]($RUN) |
+
+          Artifacts Actions run ke "Artifacts" section me hain. Maintainer release step ka log
+          dekhega (usually tag/version formatting issue hota hai).
           EOF
             )
           else
