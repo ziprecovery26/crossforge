@@ -170,8 +170,8 @@ execute hote hain.
 
 | project | release | targets | verified kaise |
 |---|---|---|---|
-| **opencode** | `v1.18.34-cf.termux` | android-arm64, linux-x64/arm64(+musl), darwin-arm64, windows-x64/arm64 | Tarball me `bin/opencode.bin` + `lib/libopentui.so`; dono **ARM aarch64 bionic** ELF (NEEDED = `libm`/`libc`/`libdl`, `SONAME=libopentui.so`, 1836 exported symbols); `sha256sum -c` OK |
-| **ripgrep 14.1.1** | `v14.1.1-cf.9` | android-arm64, linux-x64, linux-arm64 | `rg --version` → `ripgrep 14.1.1 (rev 4649aa9700)` **actually chalaya gaya**; android binary `interpreter /system/bin/linker64`, NEEDED sirf `libdl`/`libc`; `sha256sum -c` OK |
+| **opencode** | `v1.18.34-cf.termux2` | android-arm64, linux-x64/arm64(+musl), darwin-arm64, windows-x64/arm64 | Tarball me `bin/opencode.bin` + `lib/libopentui.so`; dono **ARM aarch64 bionic** ELF (NEEDED = `libm`/`libc`/`libdl`, `SONAME=libopentui.so`, 1836 exported symbols); `sha256sum -c` OK |
+| **ripgrep 14.1.1** | `v14.1.1-cf.11` | android-arm64, linux-x64, linux-arm64 | `rg --version` → `ripgrep 14.1.1 (rev 4649aa9700)` **actually chalaya gaya**; android binary `interpreter /system/bin/linker64`, NEEDED sirf `libdl`/`libc`; `sha256sum -c` OK |
 
 Dono releases ki tar balls `install.sh` / `install.ps1` / `termux-install.sh` ke saath aati hain,
 aur download ke waqt checksum verify hota hai.
