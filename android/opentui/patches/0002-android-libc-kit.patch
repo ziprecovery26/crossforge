@@ -1,0 +1,44 @@
+From 7b3c9d1e5f2a4c8b0d6e3a1f9c7b5d2e4a8f0c36 Mon Sep 17 00:00:00 2001
+From: CrossForge <crossforge-bot@users.noreply.github.com>
+Date: Wed, 1 Oct 2026 00:00:00 +0000
+Subject: [PATCH] android: accept an NDK libc "kit" (and sysroot) for bionic builds
+
+Zig 0.15 cannot "provide libc" for bionic targets, so a *dynamic* Android build
+aborts with:
+
+    error: unable to provide libc for target 'aarch64-linux.5.10...6.16-android.24'
+    info: zig can provide libc for related target aarch64-linux.3.7.0-gnu.2.17
+
+Passing `--sysroot` alone does not help, because zig still insists on shipping
+libc itself for cross targets. The supported escape hatch is `--libc <file>`
+("cross compilation libc kit"), which `zig build` can only reach through
+`std.Build.libc_file` — there is no CLI flag for it.
+
+This patch adds two build options:
+
+    -Dandroid-libc=<path>     a zig --libc file describing the NDK sysroot
+    -Dandroid-sysroot=<path>  optional sysroot for include/lib search paths
+
+CrossForge generates the libc file from the NDK automatically
+(android/opentui/build-opentui-android.sh) and applies this patch out-of-tree.
+---
+--- a/packages/core/src/zig/build.zig
++++ b/packages/core/src/zig/build.zig
+@@ -270,6 +270,17 @@
+ pub fn build(b: *std.Build) void {
+     checkZigVersion();
+ 
++    // CrossForge patch: zig cannot ship bionic, so Android needs an external libc
++    // "kit" pointing at the NDK sysroot. We accept either a ready-made libc file
++    // (`-Dandroid-libc=`) or an NDK sysroot (`-Dandroid-sysroot=`, which we turn
++    // into a libc file for the requested API level).
++    if (b.option([]const u8, "android-libc", "Path to a zig --libc file describing the NDK sysroot")) |libc_file| {
++        b.libc_file = libc_file;
++    }
++    if (b.option([]const u8, "android-sysroot", "Android NDK sysroot (used for include/lib search paths)")) |sysroot| {
++        b.sysroot = sysroot;
++    }
++
+     const optimize = b.standardOptimizeOption(.{});
+     const bench_optimize = b.option(std.builtin.OptimizeMode, "bench-optimize", "Optimize mode for benchmarks") orelse .ReleaseFast;
+     const debug_use_llvm = b.option(bool, "debug-llvm", "Use LLVM backend for debug/test artifacts");

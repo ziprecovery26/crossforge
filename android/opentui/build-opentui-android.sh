@@ -126,15 +126,53 @@ CANDIDATES=(
   "aarch64-linux-android${NDK_API}"
 )
 
+# Zig bionic provide nahi karta — NDK se ek "libc kit" file banani padti hai
+# jo zig ko `--libc` ke through dete hain (patch 0002 -> b.libc_file).
+SYSROOT=""
+LIBC_FILE=""
+if [ -n "${ANDROID_NDK_HOME:-}" ]; then
+  NDK_HOST_DIR="$(ls -d "$ANDROID_NDK_HOME"/toolchains/llvm/prebuilt/*/ 2>/dev/null | head -1)"
+  SYSROOT="${NDK_HOST_DIR%/}/sysroot"
+  if [ -d "$SYSROOT" ]; then
+    CRT_DIR="$SYSROOT/usr/lib/${ARCH_TRIPLE:-aarch64-linux-android}/${NDK_API}"
+    [ -d "$CRT_DIR" ] || CRT_DIR="$(ls -d "$SYSROOT"/usr/lib/aarch64-linux-android/*/ 2>/dev/null | head -1)"
+    LIBC_FILE="$WORK/android-libc.txt"
+    ARCH_INC="$SYSROOT/usr/include/aarch64-linux-android"
+    [ -d "$ARCH_INC" ] || ARCH_INC="$SYSROOT/usr/include"
+    cat > "$LIBC_FILE" <<EOF
+include_dir=$SYSROOT/usr/include
+sys_include_dir=$ARCH_INC
+crt_dir=${CRT_DIR%/}
+msvc_lib_dir=
+kernel32_lib_dir=
+gcc_dir=
+dynamic_linker=/system/bin/linker64
+EOF
+    cf::log "android libc kit: $LIBC_FILE"
+    cf::log "  sysroot: $SYSROOT"
+    cf::log "  sys_include_dir: $ARCH_INC"
+    cf::log "  crt_dir: ${CRT_DIR%/}"
+    zig libc "$LIBC_FILE" >/dev/null 2>&1 || cf::warn "zig ne libc file validate nahi ki (phir bhi try karenge)"
+  else
+    cf::warn "NDK sysroot nahi mila: $SYSROOT"
+    SYSROOT=""
+  fi
+else
+  cf::warn "ANDROID_NDK_HOME set nahi hai — bionic linking fail hogi"
+fi
+
 build_ok=0
 for t in "${CANDIDATES[@]}"; do
-  cf::group "zig build -Dtarget=$t"
-  ( cd "$ZIG_DIR" && zig build -Doptimize=ReleaseFast -Dtarget="$t" ) && {
+  args=(-Doptimize=ReleaseFast -Dtarget="$t")
+  [ -n "$LIBC_FILE" ] && args+=(-Dandroid-libc="$LIBC_FILE")
+  [ -n "$SYSROOT" ] && args+=(-Dandroid-sysroot="$SYSROOT")
+  cf::group "zig build ${args[*]}"
+  if ( cd "$ZIG_DIR" && zig build "${args[@]}" ); then
     build_ok=1
     cf::log "built with target $t"
     cf::endgroup
     break
-  }
+  fi
   cf::endgroup
   cf::warn "target '$t' failed, trying next spelling"
 done
