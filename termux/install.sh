@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # CrossForge · Termux installer for opencode
 #
-#   curl -fsSL https://github.com/OWNER/crossforge/releases/latest/download/termux-install.sh | bash
+#   curl -fsSL https://github.com/ziprecovery26/crossforge/releases/latest/download/termux-install.sh | bash
 #
 # Installs:
 #   $PREFIX/bin/opencode                  launcher
@@ -9,7 +9,7 @@
 #   $PREFIX/lib/libopentui.so             TUI renderer (bionic aarch64)
 set -euo pipefail
 
-REPO="${CROSSFORGE_REPO:-OWNER/crossforge}"
+REPO="${CROSSFORGE_REPO:-ziprecovery26/crossforge}"
 PROJECT="${CROSSFORGE_PROJECT:-opencode}"
 VERSION="${CROSSFORGE_VERSION:-latest}"
 ARCH="$(uname -m)"

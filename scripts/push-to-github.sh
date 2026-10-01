@@ -21,8 +21,8 @@ command -v gh >/dev/null 2>&1 || { echo "gh CLI chahiye: https://cli.github.com/
 gh auth status >/dev/null 2>&1 || { echo "pehle 'gh auth login' karo"; exit 1; }
 
 echo "==> placeholders replace kar raha hoon (OWNER → $USERNAME)"
-grep -rl "OWNER/crossforge" . --exclude-dir=.git 2>/dev/null | while read -r f; do
-  sed -i "s#OWNER/crossforge#$USERNAME/$REPO#g" "$f"
+grep -rl "ziprecovery26/crossforge" . --exclude-dir=.git 2>/dev/null | while read -r f; do
+  sed -i "s#ziprecovery26/crossforge#$USERNAME/$REPO#g" "$f"
   echo "    patched $f"
 done
 

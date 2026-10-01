@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # CrossForge · Linux/macOS installer for opencode
 #
-#   curl -fsSL https://github.com/OWNER/crossforge/releases/latest/download/install.sh | bash
+#   curl -fsSL https://github.com/ziprecovery26/crossforge/releases/latest/download/install.sh | bash
 #
 # Env overrides: CROSSFORGE_REPO, CROSSFORGE_PROJECT, CROSSFORGE_VERSION, CROSSFORGE_PREFIX
 set -euo pipefail
 
-REPO="${CROSSFORGE_REPO:-OWNER/crossforge}"
+REPO="${CROSSFORGE_REPO:-ziprecovery26/crossforge}"
 PROJECT="${CROSSFORGE_PROJECT:-opencode}"
 VERSION="${CROSSFORGE_VERSION:-latest}"
 PREFIX_DIR="${CROSSFORGE_PREFIX:-$HOME/.local}"

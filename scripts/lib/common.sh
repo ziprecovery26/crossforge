@@ -136,7 +136,7 @@ unless the upstream project says so.
 | toolchain | bun \`$(bun --version 2>/dev/null || echo n/a)\`, node \`$(node --version 2>/dev/null || echo n/a)\`, go \`$(go version 2>/dev/null | awk '{print $3}' || echo n/a)\` |
 
 Source: https://github.com/$repo
-Build logs: https://github.com/${GITHUB_REPOSITORY:-OWNER/crossforge}/actions/runs/${GITHUB_RUN_ID:-0}
+Build logs: https://github.com/${GITHUB_REPOSITORY:-ziprecovery26/crossforge}/actions/runs/${GITHUB_RUN_ID:-0}
 
 This artifact is redistributed under the terms of the upstream license shown
 above. CrossForge claims no copyright over the compiled program.

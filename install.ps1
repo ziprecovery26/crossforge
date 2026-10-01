@@ -1,11 +1,11 @@
 # CrossForge · Windows installer for opencode
 #
-#   irm https://github.com/OWNER/crossforge/releases/latest/download/install.ps1 | iex
+#   irm https://github.com/ziprecovery26/crossforge/releases/latest/download/install.ps1 | iex
 #
 # Env overrides: $env:CROSSFORGE_REPO, $env:CROSSFORGE_PROJECT, $env:CROSSFORGE_VERSION
 $ErrorActionPreference = "Stop"
 
-$Repo    = if ($env:CROSSFORGE_REPO)    { $env:CROSSFORGE_REPO }    else { "OWNER/crossforge" }
+$Repo    = if ($env:CROSSFORGE_REPO)    { $env:CROSSFORGE_REPO }    else { "ziprecovery26/crossforge" }
 $Project = if ($env:CROSSFORGE_PROJECT) { $env:CROSSFORGE_PROJECT } else { "opencode" }
 $Version = if ($env:CROSSFORGE_VERSION) { $env:CROSSFORGE_VERSION } else { "latest" }
 

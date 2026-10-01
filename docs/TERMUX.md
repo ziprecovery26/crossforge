@@ -4,7 +4,7 @@
 
 ```bash
 pkg update && pkg install curl ripgrep
-curl -fsSL https://github.com/OWNER/crossforge/releases/latest/download/termux-install.sh | bash
+curl -fsSL https://github.com/ziprecovery26/crossforge/releases/latest/download/termux-install.sh | bash
 opencode
 ```
 

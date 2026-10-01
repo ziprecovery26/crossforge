@@ -24,10 +24,10 @@ git push -u origin main
 
 ## 2. Placeholder replace karo (`OWNER` → tumhara username)
 
-Poore repo mein `OWNER/crossforge` ko apne `username/crossforge` se badlo:
+Poore repo mein `ziprecovery26/crossforge` ko apne `username/crossforge` se badlo:
 
 ```bash
-grep -rl "OWNER/crossforge" . --exclude-dir=.git | xargs sed -i "s#OWNER/crossforge#<username>/crossforge#g"
+grep -rl "ziprecovery26/crossforge" . --exclude-dir=.git | xargs sed -i "s#ziprecovery26/crossforge#<username>/crossforge#g"
 git commit -am "chore: point badges/urls at the real repo" && git push
 ```
 

