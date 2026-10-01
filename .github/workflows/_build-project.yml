@@ -100,7 +100,7 @@ jobs:
     steps:
       # NOTE: recipe registry/ me rehta hai aur build-request flow use isi run me
       # commit karta hai. Isliye event-SHA ke bajaye branch HEAD checkout karna zaroori hai.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref_name }}
 
@@ -256,7 +256,7 @@ jobs:
           echo "\`${{ matrix.targets }}\`" >> "$GITHUB_STEP_SUMMARY"
 
       # ---- swap: 16 GB RAM ke saath bhi "no swap" runners OOM maar dete hain ----
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref_name }}
       - uses: ./.github/actions/setup-swap
@@ -271,7 +271,7 @@ jobs:
           ndk: ${{ needs.resolve.outputs.need_ndk }}
 
       - name: 📥 Checkout upstream
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ needs.resolve.outputs.repo }}
           ref: ${{ needs.resolve.outputs.ref }}
@@ -290,7 +290,7 @@ jobs:
       - name: 🔧 Download android native libs
         if: ${{ inputs.android_libs_artifact != '' }}
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.android_libs_artifact }}
           path: android-libs
@@ -311,7 +311,7 @@ jobs:
             --ref "${{ needs.resolve.outputs.ref }}"
 
       - name: 📤 Upload shard artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cf-${{ needs.resolve.outputs.project }}-shard${{ matrix.index }}
           path: |
@@ -321,7 +321,7 @@ jobs:
           if-no-files-found: error
 
       - name: 📦 Upload raw target dirs (debug + release assembly)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cf-${{ needs.resolve.outputs.project }}-dirs${{ matrix.index }}
           path: artifacts/raw/*/
@@ -336,10 +336,10 @@ jobs:
     if: ${{ contains(needs.resolve.outputs.targets, 'linux-x64') }}
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref_name }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: cf-${{ needs.resolve.outputs.project }}-dirs*
           merge-multiple: true
@@ -364,10 +364,10 @@ jobs:
     if: ${{ contains(needs.resolve.outputs.targets, 'windows-x64') }}
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref_name }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: cf-${{ needs.resolve.outputs.project }}-dirs*
           merge-multiple: true
@@ -394,12 +394,12 @@ jobs:
     outputs:
       release_url: ${{ steps.publish.outputs.release_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref_name }}
 
       - name: 📥 Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: cf-${{ needs.resolve.outputs.project }}-shard*
           merge-multiple: true

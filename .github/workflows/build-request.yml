@@ -29,7 +29,7 @@ jobs:
       targets: ${{ steps.recipe.outputs.targets }}
       ref: ${{ steps.recipe.outputs.ref }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ github.token }}
           fetch-depth: 0
