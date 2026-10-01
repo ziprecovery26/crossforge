@@ -38,7 +38,10 @@ done
 [ -f "$RECIPE" ]   || cf::die "recipe not found: $RECIPE"
 [ -d "$UPSTREAM" ] || cf::die "upstream checkout not found: $UPSTREAM"
 
-mkdir -p "$OUT"
+# Builders upstream dir me `cd` karte hain, isliye paths absolute kar dete hain.
+RECIPE="$(cd "$(dirname "$RECIPE")" && pwd)/$(basename "$RECIPE")"
+UPSTREAM="$(cd "$UPSTREAM" && pwd)"
+OUT="$(mkdir -p "$OUT" && cd "$OUT" && pwd)"
 
 CF_PROJECT="$(jq -r '.id' "$RECIPE")"
 export CF_PROJECT

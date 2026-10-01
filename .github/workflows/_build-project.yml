@@ -153,12 +153,15 @@ jobs:
         run: |
           set -euo pipefail
           V=""
-          for f in package.json Cargo.toml; do
+          # monorepo ho to package dir ka manifest pehle dekho (root package.json
+          # me aksar version nahi hota — jaise opencode me)
+          PKG_DIR="$(jq -r '.upstream.monorepo.packageDir // empty' "registry/${{ inputs.project }}.json" 2>/dev/null || true)"
+          for f in "${PKG_DIR:+$PKG_DIR/}package.json" package.json Cargo.toml; do
             RAW="$(curl -fsSL "https://raw.githubusercontent.com/$REPO/$REF/$f" 2>/dev/null || true)"
             [ -z "$RAW" ] && continue
             case "$f" in
-              package.json) V="$(printf '%s' "$RAW" | jq -r '.version // empty')" ;;
-              Cargo.toml)   V="$(printf '%s' "$RAW" | sed -n 's/^version *= *"\(.*\)"/\1/p' | head -1)" ;;
+              *package.json) V="$(printf '%s' "$RAW" | jq -r '.version // empty')" ;;
+              *Cargo.toml)   V="$(printf '%s' "$RAW" | sed -n 's/^version *= *"\(.*\)"/\1/p' | head -1)" ;;
             esac
             [ -n "$V" ] && break
           done
