@@ -43,9 +43,10 @@ cd "$PKG_DIR" || cf::die "upstream subdir not found: $PKG_DIR"
 
 # Prefer cargo-zigbuild (no macOS machine needed for darwin targets). Fall back
 # to plain cargo when zig isn't available.
-BUILDER="cargo"
+# `cargo zigbuild` is a cargo *subcommand*; plain cargo needs the `build` word.
+CMDLINE=(cargo build)
 if command -v cargo-zigbuild >/dev/null 2>&1 && command -v zig >/dev/null 2>&1 && zig version >/dev/null 2>&1; then
-  BUILDER="cargo zigbuild"
+  CMDLINE=(cargo zigbuild)
   cf::log "using cargo-zigbuild ($(cargo-zigbuild --version 2>/dev/null | head -1)) + zig $(zig version)"
 elif command -v cargo-zigbuild >/dev/null 2>&1; then
   cf::warn "cargo-zigbuild mila par zig nahi — plain cargo use kar raha hoon (arm64/windows targets fail ho sakte hain)"
@@ -87,7 +88,7 @@ for target in ${TARGETS//,/ }; do
   if [ "${#BINS[@]}" -eq 0 ]; then extra+=(--bins); fi
 
   # shellcheck disable=SC2086
-  if ! $BUILDER --release --target "$triple" "${extra[@]}"; then
+  if ! "${CMDLINE[@]}" --release --target "$triple" "${extra[@]}"; then
     cf::err "rust build failed for $triple"
     cf::endgroup
     FAILED+=("$target")

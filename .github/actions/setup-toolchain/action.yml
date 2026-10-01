@@ -25,6 +25,10 @@ inputs:
     description: "Extra rustup targets (comma separated)"
     required: false
     default: ""
+  zig-version:
+    description: "Zig version installed alongside Rust (cargo-zigbuild needs it)"
+    required: false
+    default: "0.15.2"
   ndk:
     description: "Download Android NDK r27c"
     required: false
@@ -96,24 +100,42 @@ runs:
           done
         fi
 
-        # zig + cargo-zigbuild give us glibc/musl/macOS cross-linkers without a macOS machine.
-        # `pip install ziglang` ships the full zig binary inside the package dir; we
-        # symlink it onto PATH so `zig` works everywhere (cargo-zigbuild needs it).
+        # zig + cargo-zigbuild give us glibc/musl/macOS cross-linkers without a
+        # macOS machine. We install both from *prebuilt* artifacts — `cargo install`
+        # compiles from source and was taking ~15 minutes on the runners.
+        ZIG_VERSION="${{ inputs.zig-version }}"
+
         if ! command -v zig >/dev/null 2>&1 || ! zig version >/dev/null 2>&1; then
-          pip3 install --quiet --break-system-packages ziglang 2>/dev/null \
-            || pip install --quiet ziglang 2>/dev/null || true
-          ZIG_PATH="$(python3 -c "import ziglang, os; print(os.path.join(os.path.dirname(ziglang.__file__), 'zig'))" 2>/dev/null || true)"
-          if [ -n "$ZIG_PATH" ] && [ -x "$ZIG_PATH" ]; then
-            sudo ln -sf "$ZIG_PATH" /usr/local/bin/zig
-            echo "zig symlinked: $ZIG_PATH"
+          ZIG_URL=""
+          ZIG_URL="$(curl -fsSL https://ziglang.org/download/index.json 2>/dev/null \
+            | jq -r --arg v "$ZIG_VERSION" '.[$v]["x86_64-linux"].tarball // empty' 2>/dev/null || true)"
+          [ -n "$ZIG_URL" ] || ZIG_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
+          echo "downloading $ZIG_URL"
+          if curl -fsSL --retry 3 -o /tmp/zig.tar.xz "$ZIG_URL"; then
+            sudo mkdir -p /opt/zig && sudo tar -xJf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
+            sudo ln -sf /opt/zig/zig /usr/local/bin/zig
+            rm -f /tmp/zig.tar.xz
+          else
+            echo "::warning::zig download failed ($ZIG_URL)"
           fi
         fi
-        command -v zig >/dev/null 2>&1 && zig version || echo "::warning::zig unavailable — cargo-zigbuild cross-linking will not work"
+        if command -v zig >/dev/null 2>&1; then echo "zig: $(zig version)"; else echo "::warning::zig unavailable"; fi
 
         if ! command -v cargo-zigbuild >/dev/null; then
-          cargo install --locked cargo-zigbuild
+          CZB_VERSION="$(curl -fsSL https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/latest 2>/dev/null | jq -r .tag_name 2>/dev/null || true)"
+          [ -n "$CZB_VERSION" ] || CZB_VERSION="v0.23.4"
+          CZB_URL="https://github.com/rust-cross/cargo-zigbuild/releases/download/${CZB_VERSION}/cargo-zigbuild-x86_64-unknown-linux-gnu.tar.xz"
+          echo "downloading $CZB_URL"
+          if curl -fsSL --retry 3 -o /tmp/czb.tar.xz "$CZB_URL" \
+             && tar -xJf /tmp/czb.tar.xz -C /tmp \
+             && sudo install -m 0755 /tmp/cargo-zigbuild /usr/local/bin/cargo-zigbuild; then
+            echo "cargo-zigbuild installed from release ${CZB_VERSION}"
+          else
+            echo "::warning::prebuilt cargo-zigbuild unavailable, falling back to cargo install (~15 min)"
+            cargo install --locked cargo-zigbuild || true
+          fi
         fi
-        cargo-zigbuild --version 2>/dev/null || true
+        cargo-zigbuild --version 2>/dev/null || echo "::warning::cargo-zigbuild unavailable"
 
     - name: Setup Android NDK
       if: inputs.ndk == 'true'
