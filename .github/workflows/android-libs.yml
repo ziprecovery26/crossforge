@@ -77,10 +77,12 @@ jobs:
           file "$SO" | grep -q "ARM aarch64" || { echo "::error::not an aarch64 ELF"; exit 1; }
           # bionic binaries link against /system/bin/linker64, not ld-linux
           readelf -d "$SO" | head -20 || true
-          echo "### ✅ libopentui.so built" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          file "$SO" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### ✅ libopentui.so built"
+            echo '```'
+            file "$SO"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 📤 Upload artifact
         uses: actions/upload-artifact@v4
