@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-swap
         with:
@@ -85,7 +85,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 📤 Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cf-android-libs-${{ inputs.project }}
           path: out-android/libopentui.so
