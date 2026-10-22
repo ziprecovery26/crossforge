@@ -1,4 +1,4 @@
 {
   "_comment": "nightly-rebuild.yml is file ko update karta hai: project id -> last built upstream commit SHA. Isse roz sirf wahi projects rebuild hote hain jinka upstream badla ho.",
-  "opencode": "5c5262660f87d3327868af3559a71810fefe2bed"
+  "opencode": "248bfbe1117da1e7cc23bd41273188318afec3a5"
 }
