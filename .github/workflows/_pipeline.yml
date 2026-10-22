@@ -71,7 +71,7 @@ jobs:
     continue-on-error: true
     if: ${{ inputs.targets == '' || contains(inputs.targets, 'android-arm64') }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref_name }}
       - uses: ./.github/actions/setup-swap
@@ -103,7 +103,7 @@ jobs:
 
       - name: 📤 Upload android libs
         if: ${{ steps.opentui.outputs.ok == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cf-android-libs-${{ inputs.project }}
           path: out-android/libopentui.so
